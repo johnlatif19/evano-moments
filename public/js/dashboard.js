@@ -4,17 +4,14 @@
   const API = {
     session: "/api/admin/session",
     logout: "/api/admin/logout",
-
     stats: "/api/admin/stats",
     jobs: "/api/admin/jobs",
     settings: "/api/admin/settings",
-
     photos: "/api/admin/photos",
     uploadSignature: "/api/admin/photos/upload-signature",
     register: "/api/admin/photos/register",
     reindex: (id) => "/api/admin/photos/" + encodeURIComponent(id) + "/reindex",
     remove: (id) => "/api/admin/photos/" + encodeURIComponent(id),
-
     visitors: "/api/admin/visitors",
     changeCode: "/api/admin/settings/album-code",
   };
@@ -26,6 +23,7 @@
 
   const state = {
     admin: null,
+    csrfToken: null,
     uploadQueue: [],
     uploading: false,
     libCursor: null,
@@ -43,10 +41,8 @@
     menuToggle: el("menuToggle"),
     sidebar: el("sidebar"),
     viewTitle: el("viewTitle"),
-
     navItems: document.querySelectorAll(".nav-item"),
     views: document.querySelectorAll(".view"),
-
     statTotal: el("statTotal"),
     statIndexed: el("statIndexed"),
     statPending: el("statPending"),
@@ -54,7 +50,6 @@
     statFaces: el("statFaces"),
     statVisitors: el("statVisitors"),
     activityList: el("activityList"),
-
     dropzone: el("dropzone"),
     filePicker: el("filePicker"),
     btnPick: el("btn-pick"),
@@ -63,34 +58,28 @@
     uploadList: el("uploadList"),
     btnUploadStart: el("btn-upload-start"),
     btnUploadClear: el("btn-upload-clear"),
-
     filterStatus: el("filterStatus"),
     searchBox: el("searchBox"),
     libGrid: el("libGrid"),
     libEmpty: el("libEmpty"),
     btnLibMore: el("btn-lib-more"),
-
     jobsList: el("jobsList"),
-
     visTotal: el("visTotal"),
     visActive: el("visActive"),
     visLast24: el("visLast24"),
     visitorsBody: el("visitorsBody"),
     btnVisitorsRefresh: el("btn-visitors-refresh"),
-
     formSettings: el("form-settings"),
     setThreshold: el("setThreshold"),
     setSelfieTtl: el("setSelfieTtl"),
     setRateLimit: el("setRateLimit"),
     settingsMsg: el("settingsMsg"),
     btnSaveSettings: el("btn-save-settings"),
-
     formCode: el("form-code"),
     newCode: el("newCode"),
     confirmCode: el("confirmCode"),
     codeMsg: el("codeMsg"),
     btnSaveCode: el("btn-save-code"),
-
     toast: el("toast"),
   };
 
@@ -126,6 +115,12 @@
     catch { return {}; }
   }
 
+  function csrfHeaders(extra) {
+    const h = { "Content-Type": "application/json" };
+    if (state.csrfToken) h["x-csrf-token"] = state.csrfToken;
+    return Object.assign(h, extra || {});
+  }
+
   function fmt(n) {
     if (n === null || n === undefined) return "—";
     return Number(n).toLocaleString("ar-EG");
@@ -141,7 +136,7 @@
   function fmtDate(ts) {
     if (!ts) return "—";
     try {
-      const d = typeof ts === "number" ? new Date(ts) : new Date(ts);
+      const d = new Date(ts);
       if (isNaN(d.getTime())) return "—";
       return d.toLocaleString("ar-EG", { dateStyle: "short", timeStyle: "short" });
     } catch { return "—"; }
@@ -168,6 +163,7 @@
         return false;
       }
       state.admin = data.admin || null;
+      state.csrfToken = data.csrf || null;
       refs.adminName.textContent = (state.admin && state.admin.username) ? state.admin.username : "";
       refs.app.hidden = false;
       return true;
@@ -179,7 +175,11 @@
 
   async function onLogout() {
     try {
-      await fetch(API.logout, { method: "POST", credentials: "include" });
+      await fetch(API.logout, {
+        method: "POST",
+        credentials: "include",
+        headers: csrfHeaders(),
+      });
     } catch {}
     window.location.replace("/login");
   }
@@ -369,7 +369,7 @@
       const sigRes = await fetch(API.uploadSignature, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: csrfHeaders(),
         body: JSON.stringify({
           filename: item.file.name,
           size: item.file.size,
@@ -424,7 +424,7 @@
       const regRes = await fetch(API.register, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: csrfHeaders(),
         body: JSON.stringify({
           publicId: uploaded.public_id,
           secureUrl: uploaded.secure_url,
@@ -433,7 +433,7 @@
           bytes: uploaded.bytes,
           format: uploaded.format,
           originalFilename: item.file.name,
-          faces: Array.isArray(uploaded.faces) ? uploaded.faces : [],
+          faces: [],
         }),
       });
       const regData = await safeJson(regRes);
@@ -588,7 +588,11 @@
 
   async function reindexPhoto(id) {
     try {
-      const res = await fetch(API.reindex(id), { method: "POST", credentials: "include" });
+      const res = await fetch(API.reindex(id), {
+        method: "POST",
+        credentials: "include",
+        headers: csrfHeaders(),
+      });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر بدء إعادة الفهرسة.");
       showToast("بدأت إعادة الفهرسة.", "success");
@@ -600,7 +604,11 @@
   async function deletePhoto(id, name) {
     if (!confirm("سيتم حذف الصورة " + (name ? '"' + name + '"' : "") + " وجميع بياناتها. هل تريد المتابعة؟")) return;
     try {
-      const res = await fetch(API.remove(id), { method: "DELETE", credentials: "include" });
+      const res = await fetch(API.remove(id), {
+        method: "DELETE",
+        credentials: "include",
+        headers: csrfHeaders(),
+      });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر الحذف.");
       showToast("تم حذف الصورة.", "success");
@@ -644,7 +652,9 @@
         retry.addEventListener("click", async () => {
           try {
             const r = await fetch("/api/admin/jobs/" + encodeURIComponent(job.id) + "/retry", {
-              method: "POST", credentials: "include",
+              method: "POST",
+              credentials: "include",
+              headers: csrfHeaders(),
             });
             const d = await safeJson(r);
             if (!r.ok || !d.ok) throw new Error((d && d.message) || "تعذّرت الإعادة.");
@@ -691,8 +701,7 @@
         const td3 = document.createElement("td");
         td3.textContent = shortIp(s.ip);
         const td4 = document.createElement("td");
-        const active = s.active === true || (s.expiresAt && s.expiresAt > Date.now());
-        td4.textContent = active ? "نشطة" : "منتهية";
+        td4.textContent = s.active ? "نشطة" : "منتهية";
         tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
         frag.appendChild(tr);
       });
@@ -729,7 +738,7 @@
       const res = await fetch(API.settings, {
         method: "PATCH",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: csrfHeaders(),
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
@@ -763,7 +772,7 @@
       const res = await fetch(API.changeCode, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: csrfHeaders(),
         body: JSON.stringify({ newCode: a }),
       });
       const data = await safeJson(res);
