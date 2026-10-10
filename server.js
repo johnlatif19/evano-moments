@@ -9,7 +9,6 @@ const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const path = require("path");
-const fs = require("fs");
 const admin = require("firebase-admin");
 const cloudinary = require("cloudinary").v2;
 const { z } = require("zod");
@@ -46,13 +45,13 @@ function timingSafeEqualHex(a, b) {
   }
 }
 
-function newToken(bytes = 32) {
-  return crypto.randomBytes(bytes).toString("hex");
+function newToken(bytes) {
+  return crypto.randomBytes(bytes || 32).toString("hex");
 }
 
 const ENV = {
   nodeEnv: optional("NODE_ENV", "development"),
-  appBaseUrl: optional("APP_BASE_URL", "https://evano-moments.vercel.app"),
+  appBaseUrl: optional("APP_BASE_URL", "http://localhost:3000"),
   adminUsername: required("ADMIN_USERNAME"),
   adminPasswordHash: required("ADMIN_PASSWORD_HASH"),
   sessionSecret: required("SESSION_SECRET"),
@@ -76,9 +75,7 @@ try {
 }
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 const db = admin.firestore();
@@ -112,12 +109,8 @@ app.use(helmet({
   referrerPolicy: { policy: "strict-origin-when-cross-origin" },
 }));
 
-app.use(cors({
-  origin: ENV.appBaseUrl,
-  credentials: true,
-}));
-
-app.use(express.json({ limit: "256kb" }));
+app.use(cors({ origin: ENV.appBaseUrl, credentials: true }));
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false, limit: "64kb" }));
 app.use(cookieParser());
 
@@ -131,26 +124,20 @@ app.use(express.static(PUBLIC_DIR, {
 }));
 
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, max: 10,
+  standardHeaders: true, legacyHeaders: false,
   message: { ok: false, message: "محاولات كثيرة. حاول لاحقاً." },
 });
 
 const galleryAccessLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, max: 30,
+  standardHeaders: true, legacyHeaders: false,
   message: { ok: false, message: "محاولات كثيرة. حاول لاحقاً." },
 });
 
 const guestSearchLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 10 * 60 * 1000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
   message: { ok: false, message: "عدد كبير من عمليات البحث. حاول لاحقاً." },
 });
 
@@ -172,9 +159,7 @@ function verifySession(token) {
     if (!payload || typeof payload !== "object") return null;
     if (payload.exp && Date.now() > payload.exp) return null;
     return payload;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function issueCsrf(sessionId) {
@@ -190,22 +175,14 @@ function verifyCsrf(sessionId, token) {
   return timingSafeEqualHex(sig, expected);
 }
 
-const COOKIE_BASE = {
-  httpOnly: true,
-  secure: isProd,
-  sameSite: "lax",
-  path: "/",
-};
+const COOKIE_BASE = { httpOnly: true, secure: isProd, sameSite: "lax", path: "/" };
 
 function setAdminSession(res, sessionId, csrf) {
   const exp = Date.now() + ENV.sessionTtlHours * 60 * 60 * 1000;
   const token = signSession({ sid: sessionId, role: "admin", exp });
   res.cookie("admin_session", token, { ...COOKIE_BASE, maxAge: ENV.sessionTtlHours * 60 * 60 * 1000 });
   res.cookie("admin_csrf", csrf, {
-    httpOnly: false,
-    secure: isProd,
-    sameSite: "lax",
-    path: "/",
+    httpOnly: false, secure: isProd, sameSite: "lax", path: "/",
     maxAge: ENV.sessionTtlHours * 60 * 60 * 1000,
   });
 }
@@ -220,10 +197,7 @@ function setGallerySession(res, sessionId) {
   const token = signSession({ sid: sessionId, role: "gallery", exp });
   res.cookie("gallery_session", token, { ...COOKIE_BASE, maxAge: ENV.sessionTtlHours * 60 * 60 * 1000 });
   res.cookie("gallery_csrf", issueCsrf(sessionId), {
-    httpOnly: false,
-    secure: isProd,
-    sameSite: "lax",
-    path: "/",
+    httpOnly: false, secure: isProd, sameSite: "lax", path: "/",
     maxAge: ENV.sessionTtlHours * 60 * 60 * 1000,
   });
 }
@@ -307,12 +281,8 @@ app.post("/api/admin/login", loginLimiter, handle(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ ok: false, message: "بيانات غير صالحة." });
 
   const { username, password } = parsed.data;
-  const usernameOk = crypto.timingSafeEqual(
-    Buffer.from(sha256Hex(username), "hex"),
-    Buffer.from(sha256Hex(ENV.adminUsername), "hex")
-  );
-  const passwordHash = sha256Hex(password);
-  const passwordOk = timingSafeEqualHex(passwordHash, ENV.adminPasswordHash);
+  const usernameOk = timingSafeEqualHex(sha256Hex(username), sha256Hex(ENV.adminUsername));
+  const passwordOk = timingSafeEqualHex(sha256Hex(password), ENV.adminPasswordHash);
 
   if (!usernameOk || !passwordOk) {
     return res.status(401).json({ ok: false, message: "بيانات الدخول غير صحيحة." });
@@ -332,7 +302,7 @@ app.post("/api/admin/login", loginLimiter, handle(async (req, res) => {
   res.json({ ok: true, admin: { username: ENV.adminUsername }, csrf });
 }));
 
-app.post("/api/admin/logout", requireAdmin, handle(async (req, res) => {
+app.post("/api/admin/logout", requireAdmin, requireCsrf, handle(async (req, res) => {
   await db.collection("adminSessions").doc(req.adminSession.id).delete().catch(() => {});
   clearAdminSession(res);
   res.json({ ok: true });
@@ -357,21 +327,16 @@ app.get("/api/admin/session", handle(async (req, res) => {
   });
 }));
 
-const galleryAccessSchema = z.object({
-  code: z.string().min(4).max(64),
-});
+const galleryAccessSchema = z.object({ code: z.string().min(4).max(64) });
 
 app.post("/api/gallery/access", galleryAccessLimiter, handle(async (req, res) => {
   const parsed = galleryAccessSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, message: "رمز غير صالح." });
 
   const settings = await getSettings();
-  const inputHash = sha256Hex(parsed.data.code);
-  const ok = timingSafeEqualHex(inputHash, settings.albumCodeHash);
+  const ok = timingSafeEqualHex(sha256Hex(parsed.data.code), settings.albumCodeHash);
 
-  if (!ok) {
-    return res.status(401).json({ ok: false, message: "الرمز غير صحيح." });
-  }
+  if (!ok) return res.status(401).json({ ok: false, message: "الرمز غير صحيح." });
 
   const sessionId = newToken(24);
   const now = Date.now();
@@ -445,8 +410,11 @@ app.get("/api/gallery/photos", requireGallery, handle(async (req, res) => {
     };
   });
 
-  const totalSnap = await db.collection("photos").where("status", "==", "indexed").count().get();
-  const total = totalSnap.data().count;
+  let total = 0;
+  try {
+    const totalSnap = await db.collection("photos").where("status", "==", "indexed").count().get();
+    total = totalSnap.data().count;
+  } catch { total = items.length; }
 
   res.json({ ok: true, items, nextCursor, total });
 }));
@@ -475,11 +443,8 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
     const d = doc.data() || {};
     const vec = Array.isArray(d.vector) ? d.vector : null;
     if (!vec || vec.length !== embedding.length) return;
-    const dist = cosineDistance(embedding, vec);
-    const sim = 1 - dist;
-    if (sim >= threshold) {
-      scored.push({ photoId: d.photoId, score: sim });
-    }
+    const sim = 1 - cosineDistance(embedding, vec);
+    if (sim >= threshold) scored.push({ photoId: d.photoId, score: sim });
   });
 
   scored.sort((a, b) => b.score - a.score);
@@ -535,9 +500,7 @@ const deleteSessionSchema = z.object({
 app.post("/api/guest/search-session/delete", requireGallery, requireCsrf, handle(async (req, res) => {
   const parsed = deleteSessionSchema.safeParse(req.body);
   const sid = parsed.success && parsed.data.sessionId ? parsed.data.sessionId : null;
-  if (sid) {
-    await db.collection("guestSearchSessions").doc(sid).delete().catch(() => {});
-  }
+  if (sid) await db.collection("guestSearchSessions").doc(sid).delete().catch(() => {});
   res.json({ ok: true });
 }));
 
@@ -545,9 +508,7 @@ function cosineDistance(a, b) {
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) {
     const x = a[i], y = b[i];
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
+    dot += x * y; na += x * x; nb += y * y;
   }
   const denom = Math.sqrt(na) * Math.sqrt(nb);
   if (denom === 0) return 1;
@@ -566,14 +527,17 @@ app.get("/api/admin/stats", requireAdmin, handle(async (req, res) => {
     db.collection("gallerySessions").count().get(),
   ]);
 
-  const recentSnap = await photosCol.orderBy("createdAt", "desc").limit(6).get();
-  const recentActivity = recentSnap.docs.map((d) => {
-    const data = d.data() || {};
-    return {
-      label: (data.originalFilename || d.id) + " — " + (data.status || "pending"),
-      at: data.createdAt || Date.now(),
-    };
-  });
+  let recentActivity = [];
+  try {
+    const recentSnap = await photosCol.orderBy("createdAt", "desc").limit(6).get();
+    recentActivity = recentSnap.docs.map((d) => {
+      const data = d.data() || {};
+      return {
+        label: (data.originalFilename || d.id) + " — " + (data.status || "pending"),
+        at: data.createdAt || Date.now(),
+      };
+    });
+  } catch { recentActivity = []; }
 
   res.json({
     ok: true,
@@ -590,23 +554,40 @@ app.get("/api/admin/stats", requireAdmin, handle(async (req, res) => {
 }));
 
 app.get("/api/admin/visitors", requireAdmin, handle(async (req, res) => {
-  const snap = await db.collection("gallerySessions").orderBy("createdAt", "desc").limit(200).get();
-  const now = Date.now();
-  const sessions = snap.docs.map((d) => {
-    const data = d.data() || {};
-    return {
-      id: d.id,
-      createdAt: data.createdAt || null,
-      lastSeenAt: data.lastSeenAt || null,
-      expiresAt: data.expiresAt || null,
-      ip: data.ip || "",
-      active: !!(data.expiresAt && data.expiresAt > now),
-    };
-  });
+  let sessions = [];
+  try {
+    const snap = await db.collection("gallerySessions").orderBy("createdAt", "desc").limit(200).get();
+    const now = Date.now();
+    sessions = snap.docs.map((d) => {
+      const data = d.data() || {};
+      return {
+        id: d.id,
+        createdAt: data.createdAt || null,
+        lastSeenAt: data.lastSeenAt || null,
+        expiresAt: data.expiresAt || null,
+        ip: data.ip || "",
+        active: !!(data.expiresAt && data.expiresAt > now),
+      };
+    });
+  } catch {
+    const snap = await db.collection("gallerySessions").limit(200).get();
+    const now = Date.now();
+    sessions = snap.docs.map((d) => {
+      const data = d.data() || {};
+      return {
+        id: d.id,
+        createdAt: data.createdAt || null,
+        lastSeenAt: data.lastSeenAt || null,
+        expiresAt: data.expiresAt || null,
+        ip: data.ip || "",
+        active: !!(data.expiresAt && data.expiresAt > now),
+      };
+    }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
 
   const total = sessions.length;
   const active = sessions.filter((s) => s.active).length;
-  const last24h = sessions.filter((s) => s.createdAt && now - s.createdAt < 86400000).length;
+  const last24h = sessions.filter((s) => s.createdAt && Date.now() - s.createdAt < 86400000).length;
 
   res.json({ ok: true, visitors: { total, active, last24h, sessions } });
 }));
@@ -625,23 +606,17 @@ app.post("/api/admin/photos/upload-signature", requireAdmin, requireCsrf, handle
   const publicId = "photo_" + timestamp + "_" + newToken(6);
   const folder = ENV.cloudinaryFolder + "/photos";
 
-  const paramsToSign = {
-    folder,
-    public_id: publicId,
-    timestamp,
-  };
-
-  const signature = cloudinary.utils.api_sign_request(paramsToSign, ENV.cloudinaryApiSecret);
+  const signature = cloudinary.utils.api_sign_request(
+    { folder, public_id: publicId, timestamp },
+    ENV.cloudinaryApiSecret
+  );
 
   res.json({
     ok: true,
     signature: {
       cloudName: ENV.cloudinaryCloudName,
       apiKey: ENV.cloudinaryApiKey,
-      timestamp,
-      signature,
-      folder,
-      publicId,
+      timestamp, signature, folder, publicId,
     },
   });
 }));
@@ -654,7 +629,7 @@ const registerSchema = z.object({
   bytes: z.number().int().positive().max(50 * 1024 * 1024),
   format: z.string().min(1).max(10),
   originalFilename: z.string().max(255).optional().default(""),
-  faces: z.array(z.array(z.number()).min(32).max(2048)).optional().default([]),
+  faces: z.array(z.array(z.number()).min(32).max(2048)).max(50).optional().default([]),
 });
 
 app.post("/api/admin/photos/register", requireAdmin, requireCsrf, handle(async (req, res) => {
@@ -667,13 +642,10 @@ app.post("/api/admin/photos/register", requireAdmin, requireCsrf, handle(async (
 
   const thumbUrl = cloudinary.url(data.publicId, {
     secure: true,
-    transformation: [{ width: 500, height: 500, crop: "fill", quality: "auto", fetch_format: "auto" }],
+    transformation: [{ width: 600, height: 600, crop: "fill", quality: "auto", fetch_format: "auto" }],
   });
 
-  const dlUrl = cloudinary.url(data.publicId, {
-    secure: true,
-    flags: "attachment",
-  });
+  const dlUrl = cloudinary.url(data.publicId, { secure: true, flags: "attachment" });
 
   const validFaces = data.faces.filter((v) => Array.isArray(v) && v.length === ENV.embeddingSize);
   const status = validFaces.length > 0 ? "indexed" : "pending";
@@ -700,17 +672,12 @@ app.post("/api/admin/photos/register", requireAdmin, requireCsrf, handle(async (
     const batch = db.batch();
     validFaces.forEach((vec, i) => {
       const ref = db.collection("faceEmbeddings").doc();
-      batch.set(ref, {
-        photoId: photoRef.id,
-        vector: vec,
-        index: i,
-        createdAt: now,
-      });
+      batch.set(ref, { photoId: photoRef.id, vector: vec, index: i, createdAt: now });
     });
     await batch.commit();
   }
 
-  res.json({ ok: true, photoId: photoRef.id, status });
+  res.json({ ok: true, photoId: photoRef.id, status, faceCount: validFaces.length });
 }));
 
 app.get("/api/admin/photos", requireAdmin, handle(async (req, res) => {
@@ -767,9 +734,7 @@ app.delete("/api/admin/photos/:id", requireAdmin, requireCsrf, handle(async (req
   if (!doc.exists) return res.status(404).json({ ok: false, message: "غير موجود." });
 
   const data = doc.data() || {};
-  if (data.publicId) {
-    await cloudinary.uploader.destroy(data.publicId).catch(() => {});
-  }
+  if (data.publicId) await cloudinary.uploader.destroy(data.publicId).catch(() => {});
 
   const embSnap = await db.collection("faceEmbeddings").where("photoId", "==", id).get();
   const batch = db.batch();
@@ -788,18 +753,56 @@ app.post("/api/admin/photos/:id/reindex", requireAdmin, requireCsrf, handle(asyn
   res.json({ ok: true });
 }));
 
-app.get("/api/admin/jobs", requireAdmin, handle(async (req, res) => {
-  const snap = await db.collection("photos").where("status", "==", "failed").orderBy("updatedAt", "desc").limit(100).get();
-  const jobs = snap.docs.map((d) => {
-    const data = d.data() || {};
-    return {
-      id: d.id,
-      photoId: d.id,
-      filename: data.originalFilename || "",
-      error: data.lastError || "",
-      updatedAt: data.updatedAt || null,
-    };
+const facesSchema = z.object({
+  faces: z.array(z.array(z.number()).min(32).max(2048)).max(50),
+});
+
+app.post("/api/admin/photos/:id/faces", requireAdmin, requireCsrf, handle(async (req, res) => {
+  const id = req.params.id;
+  const doc = await db.collection("photos").doc(id).get();
+  if (!doc.exists) return res.status(404).json({ ok: false, message: "غير موجود." });
+
+  const parsed = facesSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, message: "بيانات الوجوه غير صالحة." });
+
+  const valid = parsed.data.faces.filter((v) => Array.isArray(v) && v.length === ENV.embeddingSize);
+
+  const embSnap = await db.collection("faceEmbeddings").where("photoId", "==", id).get();
+  const batch = db.batch();
+  embSnap.forEach((d) => batch.delete(d.ref));
+
+  const now = Date.now();
+  valid.forEach((vec, i) => {
+    const ref = db.collection("faceEmbeddings").doc();
+    batch.set(ref, { photoId: id, vector: vec, index: i, createdAt: now });
   });
+
+  batch.update(doc.ref, {
+    status: valid.length > 0 ? "indexed" : "pending",
+    faceCount: valid.length,
+    updatedAt: now,
+    lastError: valid.length === 0 ? "no-faces-detected" : null,
+  });
+
+  await batch.commit();
+  res.json({ ok: true, faceCount: valid.length, status: valid.length > 0 ? "indexed" : "pending" });
+}));
+
+app.get("/api/admin/jobs", requireAdmin, handle(async (req, res) => {
+  let jobs = [];
+  try {
+    const snap = await db.collection("photos").where("status", "==", "failed").orderBy("updatedAt", "desc").limit(100).get();
+    jobs = snap.docs.map((d) => {
+      const data = d.data() || {};
+      return { id: d.id, photoId: d.id, filename: data.originalFilename || "", error: data.lastError || "", updatedAt: data.updatedAt || null };
+    });
+  } catch {
+    const snap = await db.collection("photos").where("status", "==", "failed").limit(100).get();
+    jobs = snap.docs.map((d) => {
+      const data = d.data() || {};
+      return { id: d.id, photoId: d.id, filename: data.originalFilename || "", error: data.lastError || "", updatedAt: data.updatedAt || null };
+    });
+  }
   res.json({ ok: true, jobs });
 }));
 
@@ -837,9 +840,7 @@ app.patch("/api/admin/settings", requireAdmin, requireCsrf, handle(async (req, r
   res.json({ ok: true });
 }));
 
-const albumCodeSchema = z.object({
-  newCode: z.string().min(4).max(64),
-});
+const albumCodeSchema = z.object({ newCode: z.string().min(4).max(64) });
 
 app.post("/api/admin/settings/album-code", requireAdmin, requireCsrf, handle(async (req, res) => {
   const parsed = albumCodeSchema.safeParse(req.body);
@@ -853,7 +854,6 @@ app.get("/dashboard", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "dashboar
 app.get("/gallery", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "gallery.html")));
 app.get("/search-face", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "search-face.html")));
 app.get("/privacy", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "privacy.html")));
-
 app.get("/", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
 
 app.use((req, res) => {
