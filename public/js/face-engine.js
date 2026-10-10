@@ -44,7 +44,7 @@
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(img, 0, 0, w, h);
     return canvas;
   }
@@ -80,10 +80,12 @@
 
   async function embed(imageData) {
     await ensureReady();
+
     const canvas = document.createElement("canvas");
     canvas.width = imageData.width;
     canvas.height = imageData.height;
-    canvas.getContext("2d").putImageData(imageData, 0, 0);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.putImageData(imageData, 0, 0);
 
     const results = await detectOnCanvas(canvas, { inputSize: 416, scoreThreshold: 0.4 });
     if (results.length === 0) throw new Error("no-face-detected");
@@ -105,6 +107,7 @@
 
   async function embedFile(fileOrUrl, options) {
     await ensureReady();
+
     const maxDim = (options && options.maxDim) || 1600;
     const inputSize = (options && options.inputSize) || 1024;
     const scoreThreshold = (options && options.scoreThreshold) || 0.35;
