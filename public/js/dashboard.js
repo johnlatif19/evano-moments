@@ -19,7 +19,7 @@
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
   const MAX_BYTES = 25 * 1024 * 1024;
   const LIB_PAGE_SIZE = 40;
-  const CONCURRENCY = 2;
+  const CONCURRENCY = 1;
 
   const state = {
     admin: null,
@@ -60,6 +60,7 @@
     uploadList: el("uploadList"),
     btnUploadStart: el("btn-upload-start"),
     btnUploadClear: el("btn-upload-clear"),
+    btnReindexAll: el("btn-reindex-all"),
     filterStatus: el("filterStatus"),
     searchBox: el("searchBox"),
     libGrid: el("libGrid"),
@@ -301,6 +302,7 @@
         error: null,
         previewUrl: URL.createObjectURL(file),
         photoId: null,
+        faceCount: 0,
       };
       state.uploadQueue.push(item);
     }
@@ -373,7 +375,7 @@
       else if (it.status === "uploading") { status.textContent = "جارٍ الرفع"; status.classList.add("is-run"); }
       else if (it.status === "indexing") { status.textContent = "فهرسة"; status.classList.add("is-run"); }
       else if (it.status === "done") {
-        status.textContent = it.faceCount ? ("تم (" + it.faceCount + ")") : "تم";
+        status.textContent = it.faceCount ? ("تم · " + it.faceCount + " وجه") : "تم";
         status.classList.add("is-ok");
       }
       else if (it.status === "error") { status.textContent = it.error || "فشل"; status.classList.add("is-err"); }
@@ -396,15 +398,17 @@
       const ok = await ensureFaceEngine();
       if (ok) {
         const detected = await window.EvanoFace.embedFile(item.file, {
-          inputSize: 608,
-          scoreThreshold: 0.5,
-          maxDim: 1280,
+          maxDim: 1600,
+          inputSize: 1024,
+          scoreThreshold: 0.35,
         });
         faces = detected
           .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
           .map((d) => d.descriptor);
+        console.log("[upload] detected faces for " + item.file.name + ":", faces.length);
       }
     } catch (err) {
+      console.warn("[upload] face detection failed:", err);
       faces = [];
     }
 
@@ -640,7 +644,7 @@
     const left = document.createElement("span");
     left.textContent = item.originalFilename || "";
     const right = document.createElement("span");
-    right.textContent = fmtBytes(item.bytes);
+    right.textContent = item.faceCount ? (item.faceCount + " وجه") : fmtBytes(item.bytes);
     info.appendChild(left);
     info.appendChild(right);
     tile.appendChild(info);
@@ -665,13 +669,15 @@
 
       const file = await fetchImageAsFile(item.url || item.thumbnailUrl, item.originalFilename || "photo.jpg");
       const detected = await window.EvanoFace.embedFile(file, {
-        inputSize: 608,
-        scoreThreshold: 0.5,
-        maxDim: 1280,
+        maxDim: 1600,
+        inputSize: 1024,
+        scoreThreshold: 0.35,
       });
       const faces = detected
         .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
         .map((d) => d.descriptor);
+
+      console.log("[index] " + (item.originalFilename || item.id) + " → " + faces.length + " وجه");
 
       const res = await fetch("/api/admin/photos/" + encodeURIComponent(item.id) + "/faces", {
         method: "POST",
@@ -695,7 +701,7 @@
   async function reindexAllPending() {
     if (state.reindexing) return;
     state.reindexing = true;
-    showToast("جارٍ فهرسة الصور المعلّقة…");
+    setBusy(refs.btnReindexAll, true, "جارٍ الفهرسة…");
 
     try {
       const ok = await ensureFaceEngine();
@@ -703,10 +709,11 @@
 
       let processed = 0;
       let totalFaces = 0;
+      let skipped = 0;
 
       while (true) {
         const params = new URLSearchParams();
-        params.set("limit", "20");
+        params.set("limit", "10");
         params.set("status", "pending");
 
         const res = await fetch(API.photos + "?" + params.toString(), { credentials: "include" });
@@ -720,13 +727,15 @@
           try {
             const file = await fetchImageAsFile(item.url || item.thumbnailUrl, item.originalFilename || "photo.jpg");
             const detected = await window.EvanoFace.embedFile(file, {
-              inputSize: 608,
-              scoreThreshold: 0.5,
-              maxDim: 1280,
+              maxDim: 1600,
+              inputSize: 1024,
+              scoreThreshold: 0.35,
             });
             const faces = detected
               .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
               .map((d) => d.descriptor);
+
+            console.log("[reindex-all] " + (item.originalFilename || item.id) + " → " + faces.length + " وجه");
 
             await fetch("/api/admin/photos/" + encodeURIComponent(item.id) + "/faces", {
               method: "POST",
@@ -737,19 +746,26 @@
 
             processed++;
             totalFaces += faces.length;
-          } catch {
-            /* skip this photo */
+            if (faces.length === 0) skipped++;
+          } catch (err) {
+            console.warn("[reindex-all] failed for", item.id, err);
+            skipped++;
           }
         }
       }
 
-      showToast("اكتملت الفهرسة: " + processed + " صورة · " + totalFaces + " وجه.", "success");
+      showToast(
+        "اكتملت الفهرسة: " + processed + " صورة · " + totalFaces + " وجه" +
+        (skipped ? " · " + skipped + " بدون وجه" : ""),
+        "success"
+      );
       loadLibrary(true);
       loadStats();
     } catch (err) {
       showToast(err.message || "تعذّرت الفهرسة.", "error");
     } finally {
       state.reindexing = false;
+      setBusy(refs.btnReindexAll, false);
     }
   }
 
@@ -1003,6 +1019,9 @@
       }, 320);
     });
     refs.btnLibMore.addEventListener("click", () => loadLibrary(false));
+    if (refs.btnReindexAll) {
+      refs.btnReindexAll.addEventListener("click", reindexAllPending);
+    }
   }
 
   function bindSettings() {
