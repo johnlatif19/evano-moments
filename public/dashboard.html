@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/public/css/dashboard.css" />
+  <link rel="stylesheet" href="/css/dashboard.css" />
 </head>
 <body>
   <div class="app" id="app" hidden>
@@ -99,7 +99,7 @@
       <section class="view" id="view-upload">
         <div class="panel">
           <h2 class="panel-title">رفع الصور</h2>
-          <p class="panel-sub">اسحب الصور وأفلتها هنا، أو اخترها من جهازك. يتم رفع كل صورة على حدة مع إظهار التقدم.</p>
+          <p class="panel-sub">اسحب الصور وأفلتها هنا، أو اخترها من جهازك. يتم تحليل الوجوه تلقائياً أثناء الرفع.</p>
 
           <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="منطقة رفع الصور">
             <div class="dz-inner">
@@ -129,6 +129,7 @@
           <div class="panel-head-row">
             <h2 class="panel-title">مكتبة الصور</h2>
             <div class="library-filters">
+              <button type="button" class="btn btn-primary btn-sm" id="btn-reindex-all">فهرسة الكل المعلّق</button>
               <select id="filterStatus" class="select">
                 <option value="">كل الحالات</option>
                 <option value="pending">قيد المعالجة</option>
