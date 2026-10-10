@@ -69,6 +69,18 @@
     toast: el("toast"),
   };
 
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function csrfHeaders(extra) {
+    const h = { "Content-Type": "application/json" };
+    const token = getCookie("gallery_csrf");
+    if (token) h["x-csrf-token"] = token;
+    return Object.assign(h, extra || {});
+  }
+
   function showToast(message, kind) {
     if (!refs.toast) return;
     refs.toast.textContent = message;
@@ -267,7 +279,7 @@
     const canvas = document.createElement("canvas");
     const size = 224;
     canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(bitmap, 0, 0, size, size);
     bitmap.close?.();
     if (signal && signal.aborted) throw new DOMException("aborted", "AbortError");
@@ -311,7 +323,7 @@
         method: "POST",
         credentials: "include",
         signal: state.abortController.signal,
-        headers: { "Content-Type": "application/json" },
+        headers: csrfHeaders(),
         body: JSON.stringify({ embedding, sessionId: state.sessionId }),
       });
       setProgress(88);
@@ -409,7 +421,7 @@
       await fetch(API.deleteSession, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: csrfHeaders(),
         body: JSON.stringify({ sessionId: state.sessionId }),
       });
     } catch {}
