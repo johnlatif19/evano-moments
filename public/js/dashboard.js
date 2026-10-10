@@ -19,7 +19,7 @@
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
   const MAX_BYTES = 25 * 1024 * 1024;
   const LIB_PAGE_SIZE = 40;
-  const CONCURRENCY = 3;
+  const CONCURRENCY = 2;
 
   const state = {
     admin: null,
@@ -31,6 +31,8 @@
     libLoading: false,
     libFilter: "",
     libQuery: "",
+    faceReady: false,
+    reindexing: false,
   };
 
   const el = (id) => document.getElementById(id);
@@ -154,6 +156,22 @@
     return ip.slice(0, 12) + "…";
   }
 
+  async function ensureFaceEngine() {
+    if (state.faceReady) return true;
+    if (!window.EvanoFace) {
+      showToast("تعذّر تحميل محرك التعرف على الوجه.", "error");
+      return false;
+    }
+    try {
+      await window.EvanoFace.ready();
+      state.faceReady = true;
+      return true;
+    } catch {
+      showToast("تعذّر تحميل نماذج التعرف على الوجه.", "error");
+      return false;
+    }
+  }
+
   async function guardSession() {
     try {
       const res = await fetch(API.session, { credentials: "include" });
@@ -212,7 +230,10 @@
 
   function onViewEnter(view) {
     if (view === "overview") loadStats();
-    if (view === "library") loadLibrary(true);
+    if (view === "library") {
+      loadLibrary(true);
+      ensureFaceEngine();
+    }
     if (view === "jobs") loadJobs();
     if (view === "visitors") loadVisitors();
     if (view === "settings") loadSettings();
@@ -284,6 +305,7 @@
       state.uploadQueue.push(item);
     }
     renderUploadList();
+    ensureFaceEngine();
   }
 
   function clearQueue() {
@@ -347,9 +369,13 @@
       const status = document.createElement("span");
       status.className = "up-status";
       if (it.status === "queued") status.textContent = "بالانتظار";
+      else if (it.status === "detecting") { status.textContent = "تحليل الوجه"; status.classList.add("is-run"); }
       else if (it.status === "uploading") { status.textContent = "جارٍ الرفع"; status.classList.add("is-run"); }
       else if (it.status === "indexing") { status.textContent = "فهرسة"; status.classList.add("is-run"); }
-      else if (it.status === "done") { status.textContent = "تم"; status.classList.add("is-ok"); }
+      else if (it.status === "done") {
+        status.textContent = it.faceCount ? ("تم (" + it.faceCount + ")") : "تم";
+        status.classList.add("is-ok");
+      }
       else if (it.status === "error") { status.textContent = it.error || "فشل"; status.classList.add("is-err"); }
 
       li.appendChild(img);
@@ -361,8 +387,30 @@
   }
 
   async function uploadOne(item) {
+    item.progress = 3;
+    item.status = "detecting";
+    renderUploadList();
+
+    let faces = [];
+    try {
+      const ok = await ensureFaceEngine();
+      if (ok) {
+        const detected = await window.EvanoFace.embedFile(item.file, {
+          inputSize: 608,
+          scoreThreshold: 0.5,
+          maxDim: 1280,
+        });
+        faces = detected
+          .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
+          .map((d) => d.descriptor);
+      }
+    } catch (err) {
+      faces = [];
+    }
+
+    item.faceCount = faces.length;
     item.status = "uploading";
-    item.progress = 5;
+    item.progress = 10;
     renderUploadList();
 
     try {
@@ -381,7 +429,7 @@
         throw new Error((sigData && sigData.message) || "تعذّر تجهيز الرفع.");
       }
 
-      item.progress = 15;
+      item.progress = 18;
       renderUploadList();
 
       const form = new FormData();
@@ -400,7 +448,7 @@
         xhr.open("POST", url, true);
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
-            item.progress = 15 + Math.round((e.loaded / e.total) * 75);
+            item.progress = 18 + Math.round((e.loaded / e.total) * 70);
             renderUploadList();
           }
         };
@@ -433,7 +481,7 @@
           bytes: uploaded.bytes,
           format: uploaded.format,
           originalFilename: item.file.name,
-          faces: [],
+          faces,
         }),
       });
       const regData = await safeJson(regRes);
@@ -529,6 +577,7 @@
   function appendLibTile(item) {
     const tile = document.createElement("div");
     tile.className = "lib-tile";
+    tile.dataset.photoId = item.id;
 
     const img = document.createElement("img");
     img.alt = "";
@@ -549,6 +598,19 @@
     const actions = document.createElement("div");
     actions.className = "lib-tile-actions";
 
+    if (s !== "indexed") {
+      const fBtn = document.createElement("button");
+      fBtn.className = "icon-btn";
+      fBtn.type = "button";
+      fBtn.title = "فهرسة الآن";
+      fBtn.textContent = "⚡";
+      fBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        indexPhotoNow(item);
+      });
+      actions.appendChild(fBtn);
+    }
+
     const reBtn = document.createElement("button");
     reBtn.className = "icon-btn";
     reBtn.type = "button";
@@ -558,6 +620,7 @@
       e.stopPropagation();
       reindexPhoto(item.id);
     });
+    actions.appendChild(reBtn);
 
     const delBtn = document.createElement("button");
     delBtn.className = "icon-btn danger";
@@ -568,9 +631,8 @@
       e.stopPropagation();
       deletePhoto(item.id, item.originalFilename);
     });
-
-    actions.appendChild(reBtn);
     actions.appendChild(delBtn);
+
     tile.appendChild(actions);
 
     const info = document.createElement("div");
@@ -586,6 +648,111 @@
     refs.libGrid.appendChild(tile);
   }
 
+  async function fetchImageAsFile(url, filename) {
+    const res = await fetch(url, { mode: "cors", credentials: "omit" });
+    if (!res.ok) throw new Error("fetch-image-failed");
+    const blob = await res.blob();
+    return new File([blob], filename || "photo.jpg", { type: blob.type || "image/jpeg" });
+  }
+
+  async function indexPhotoNow(item) {
+    const tile = refs.libGrid.querySelector('[data-photo-id="' + item.id + '"]');
+    if (tile) tile.style.opacity = "0.5";
+
+    try {
+      const ok = await ensureFaceEngine();
+      if (!ok) throw new Error("المحرك غير جاهز.");
+
+      const file = await fetchImageAsFile(item.url || item.thumbnailUrl, item.originalFilename || "photo.jpg");
+      const detected = await window.EvanoFace.embedFile(file, {
+        inputSize: 608,
+        scoreThreshold: 0.5,
+        maxDim: 1280,
+      });
+      const faces = detected
+        .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
+        .map((d) => d.descriptor);
+
+      const res = await fetch("/api/admin/photos/" + encodeURIComponent(item.id) + "/faces", {
+        method: "POST",
+        credentials: "include",
+        headers: csrfHeaders(),
+        body: JSON.stringify({ faces }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّرت الفهرسة.");
+
+      showToast("تمت فهرسة الصورة (" + faces.length + " وجه).", "success");
+      loadLibrary(true);
+      loadStats();
+    } catch (err) {
+      showToast(err.message || "تعذّرت الفهرسة.", "error");
+    } finally {
+      if (tile) tile.style.opacity = "1";
+    }
+  }
+
+  async function reindexAllPending() {
+    if (state.reindexing) return;
+    state.reindexing = true;
+    showToast("جارٍ فهرسة الصور المعلّقة…");
+
+    try {
+      const ok = await ensureFaceEngine();
+      if (!ok) throw new Error("المحرك غير جاهز.");
+
+      let processed = 0;
+      let totalFaces = 0;
+
+      while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", "20");
+        params.set("status", "pending");
+
+        const res = await fetch(API.photos + "?" + params.toString(), { credentials: "include" });
+        const data = await safeJson(res);
+        if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر جلب القائمة.");
+
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (items.length === 0) break;
+
+        for (const item of items) {
+          try {
+            const file = await fetchImageAsFile(item.url || item.thumbnailUrl, item.originalFilename || "photo.jpg");
+            const detected = await window.EvanoFace.embedFile(file, {
+              inputSize: 608,
+              scoreThreshold: 0.5,
+              maxDim: 1280,
+            });
+            const faces = detected
+              .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
+              .map((d) => d.descriptor);
+
+            await fetch("/api/admin/photos/" + encodeURIComponent(item.id) + "/faces", {
+              method: "POST",
+              credentials: "include",
+              headers: csrfHeaders(),
+              body: JSON.stringify({ faces }),
+            });
+
+            processed++;
+            totalFaces += faces.length;
+          } catch {
+            /* skip this photo */
+          }
+        }
+      }
+
+      showToast("اكتملت الفهرسة: " + processed + " صورة · " + totalFaces + " وجه.", "success");
+      loadLibrary(true);
+      loadStats();
+    } catch (err) {
+      showToast(err.message || "تعذّرت الفهرسة.", "error");
+    } finally {
+      state.reindexing = false;
+    }
+  }
+
   async function reindexPhoto(id) {
     try {
       const res = await fetch(API.reindex(id), {
@@ -595,7 +762,8 @@
       });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر بدء إعادة الفهرسة.");
-      showToast("بدأت إعادة الفهرسة.", "success");
+      showToast("أُعيدت الصورة إلى حالة الانتظار. اضغط ⚡ لفهرستها.", "success");
+      loadLibrary(true);
     } catch (err) {
       showToast(err.message, "error");
     }
@@ -853,6 +1021,7 @@
     guardSession().then((ok) => {
       if (!ok) return;
       loadStats();
+      ensureFaceEngine();
     });
   }
 
