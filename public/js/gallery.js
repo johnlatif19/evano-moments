@@ -49,6 +49,18 @@
     toast: el("toast"),
   };
 
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function csrfHeaders(extra) {
+    const h = { "Content-Type": "application/json" };
+    const token = getCookie("gallery_csrf");
+    if (token) h["x-csrf-token"] = token;
+    return Object.assign(h, extra || {});
+  }
+
   function showToast(message, kind) {
     if (!refs.toast) return;
     refs.toast.textContent = message;
@@ -157,7 +169,11 @@
 
   async function onLogout() {
     try {
-      await fetch(API.logout, { method: "POST", credentials: "include" });
+      await fetch(API.logout, {
+        method: "POST",
+        credentials: "include",
+        headers: csrfHeaders(),
+      });
     } catch {}
     state.items = [];
     state.cursor = null;
