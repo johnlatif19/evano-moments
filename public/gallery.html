@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#faf7f2" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>الألبوم — Evano Moments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/public/css/gallery.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">تخطَّ إلى المحتوى الرئيسي</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark"></span>
+        <span class="brand-name">Evano Moments</span>
+      </a>
+      <nav class="site-nav">
+        <a href="/gallery" class="nav-link is-active">الألبوم</a>
+        <a href="/privacy" class="nav-link">الخصوصية</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-head">
+      <div class="container page-head-inner">
+        <div>
+          <p class="eyebrow">المجموعة الكاملة</p>
+          <h1 class="page-title">صور المناسبة</h1>
+          <p class="page-sub" id="gallerySub">استعرض كل لحظات المناسبة. تُحمَّل الصور تدريجياً أثناء التمرير.</p>
+        </div>
+        <a class="btn btn-primary" href="/search-face">ابحث عن صورتك</a>
+      </div>
+    </section>
+
+    <section class="gate" id="gate" hidden>
+      <div class="container">
+        <div class="gate-card">
+          <h2 class="gate-title">رمز الألبوم</h2>
+          <p class="gate-sub">أدخل الرمز الذي حصلت عليه لفتح الألبوم.</p>
+          <form id="form-gate" class="gate-form" novalidate autocomplete="off">
+            <div class="field">
+              <label for="galleryCode">الرمز</label>
+              <input
+                id="galleryCode"
+                name="galleryCode"
+                type="password"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                spellcheck="false"
+                required
+                minlength="4"
+                maxlength="64"
+                aria-describedby="gateHelp gateError"
+                placeholder="••••••"
+              />
+              <p id="gateHelp" class="help">الرمز حساس لحالة الأحرف.</p>
+              <p id="gateError" class="error" role="alert" hidden></p>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" id="btn-gate">
+              <span class="btn-label">فتح الألبوم</span>
+              <span class="spinner" hidden></span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="album" id="album" hidden>
+      <div class="container">
+        <div class="album-toolbar" id="albumToolbar" hidden>
+          <p class="album-count" id="albumCount"></p>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-logout-gallery">إغلاق الألبوم</button>
+        </div>
+
+        <ul class="grid" id="grid" aria-live="polite"></ul>
+
+        <div class="loader" id="loader" hidden>
+          <span class="loader-spinner" aria-hidden="true"></span>
+          <span>جارٍ تحميل المزيد…</span>
+        </div>
+
+        <div class="album-empty" id="albumEmpty" hidden>
+          <h3>لا توجد صور بعد</h3>
+          <p>سيظهر الألبوم هنا بمجرد إضافة الصور.</p>
+        </div>
+
+        <div class="album-end" id="albumEnd" hidden>
+          <span>— نهاية الألبوم —</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p class="footer-brand"><span></span>Evano Moments</p>
+      <p class="footer-note">جميع الصور محفوظة لأصحابها.</p>
+      <nav class="footer-nav">
+        <a href="/privacy">سياسة الخصوصية</a>
+        <a href="/">الرئيسية</a>
+      </nav>
+    </div>
+  </footer>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button class="lb-close" id="lbClose" aria-label="إغلاق">×</button>
+    <button class="lb-nav lb-prev" id="lbPrev" aria-label="السابق">‹</button>
+    <img class="lb-img" id="lbImg" alt="" />
+    <button class="lb-nav lb-next" id="lbNext" aria-label="التالي">›</button>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/public/js/gallery.js" defer></script>
+</body>
+</html>

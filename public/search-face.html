@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#faf7f2" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>ابحث عن صورتك — Evano Moments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/public/css/search-face.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">تخطَّ إلى المحتوى الرئيسي</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark"></span>
+        <span class="brand-name">Evano Moments</span>
+      </a>
+      <nav class="site-nav">
+        <a href="/gallery" class="nav-link">الألبوم</a>
+        <a href="/privacy" class="nav-link">الخصوصية</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-head">
+      <div class="container page-head-inner">
+        <div>
+          <p class="eyebrow">البحث بالوجه</p>
+          <h1 class="page-title">ابحث عن صورتك</h1>
+          <p class="page-sub">ارفع صورة شخصية واضحة، وسنعرض لك اللحظات التي تظهر فيها.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="gate" id="gate" hidden>
+      <div class="container">
+        <div class="gate-card">
+          <h2 class="gate-title">رمز الألبوم</h2>
+          <p class="gate-sub">أدخل الرمز الذي حصلت عليه لبدء البحث.</p>
+          <form id="form-gate" class="gate-form" novalidate autocomplete="off">
+            <div class="field">
+              <label for="galleryCode">الرمز</label>
+              <input
+                id="galleryCode"
+                name="galleryCode"
+                type="password"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                spellcheck="false"
+                required
+                minlength="4"
+                maxlength="64"
+                aria-describedby="gateHelp gateError"
+                placeholder="••••••"
+              />
+              <p id="gateHelp" class="help">الرمز حساس لحالة الأحرف.</p>
+              <p id="gateError" class="error" role="alert" hidden></p>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" id="btn-gate">
+              <span class="btn-label">متابعة</span>
+              <span class="spinner" hidden></span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="search" id="search" hidden>
+      <div class="container search-grid">
+
+        <div class="panel">
+          <header class="panel-head">
+            <h2 class="panel-title">صورة السيلفي</h2>
+          </header>
+
+          <div class="consent">
+            <h3 class="consent-title">الموافقة على معالجة الوجه</h3>
+            <ul class="consent-list">
+              <li><strong>الغرض:</strong> مطابقة وجهك مع صور الألبوم التي تحتوي على وجهك فقط.</li>
+              <li><strong>المعالجة:</strong> يُولَّد تمثيل رقمي لوجهك داخل متصفحك.</li>
+              <li><strong>ما يُرسَل للخادم:</strong> التمثيل الرقمي فقط — وليس صورة سيلفيك.</li>
+              <li><strong>مدة الاحتفاظ:</strong> يُحذف تلقائياً عند إغلاق الجلسة.</li>
+              <li><strong>حقوقك:</strong> يمكنك طلب حذف بيانات جلسة البحث في أي وقت.</li>
+            </ul>
+            <label class="checkbox">
+              <input type="checkbox" id="consentCheckbox" required />
+              <span>أوافق على معالجة صورة وجهي لغرض مطابقة صور الألبوم.</span>
+            </label>
+          </div>
+
+          <fieldset class="selfie-fieldset" id="selfie-fieldset" disabled>
+            <legend class="sr-only">اختيار صورة السيلفي</legend>
+
+            <div class="selfie-actions">
+              <button type="button" class="btn btn-ghost" id="btn-camera">التقاط صورة</button>
+              <button type="button" class="btn btn-ghost" id="btn-upload">رفع من الجهاز</button>
+              <input type="file" id="cameraInput" accept="image/*" capture="user" hidden />
+              <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden />
+            </div>
+
+            <div class="preview" id="preview" hidden>
+              <img id="previewImg" alt="معاينة الصورة" />
+              <div class="preview-meta">
+                <p id="previewInfo" class="help"></p>
+                <div class="preview-buttons">
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-replace">استبدال</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-clear">إلغاء</button>
+                </div>
+              </div>
+            </div>
+
+            <p id="selfieError" class="error" role="alert" hidden></p>
+
+            <button type="button" class="btn btn-primary btn-block" id="btn-search" disabled>
+              <span class="btn-label">ابحث عن صوري</span>
+              <span class="spinner" hidden></span>
+            </button>
+          </fieldset>
+        </div>
+
+        <div class="panel panel-results" id="panel-results">
+          <header class="panel-head">
+            <h2 class="panel-title">النتائج</h2>
+          </header>
+
+          <div class="placeholder" id="placeholder">
+            <p>ستظهر هنا الصور التي تظهر فيها بعد اكتمال البحث.</p>
+          </div>
+
+          <div id="state-searching" class="state" hidden>
+            <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p class="state-text" id="searchingText">جارٍ البحث…</p>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-search">إلغاء</button>
+          </div>
+
+          <div id="state-results" class="state" hidden>
+            <p class="results-count" id="resultsCount"></p>
+            <ul class="gallery" id="gallery"></ul>
+          </div>
+
+          <div id="state-empty" class="state state-empty" hidden>
+            <h3>لم نجد صوراً مطابقة</h3>
+            <p class="state-text">جرّب صورة أوضح بإضاءة جيدة، أو تأكد من أن وجهك ظاهر مباشرة.</p>
+            <button type="button" class="btn btn-primary" id="btn-retry">حاول مرة أخرى</button>
+          </div>
+
+          <div id="state-error" class="state state-error" hidden>
+            <h3>تعذّر إكمال البحث</h3>
+            <p class="state-text" id="errorText"></p>
+            <button type="button" class="btn btn-primary" id="btn-error-retry">إعادة المحاولة</button>
+          </div>
+
+          <div class="session-controls" id="sessionControls" hidden>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-delete-session">
+              حذف بيانات جلسة البحث
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p class="footer-brand"><span></span>Evano Moments</p>
+      <p class="footer-note">جميع الصور محفوظة لأصحابها.</p>
+      <nav class="footer-nav">
+        <a href="/privacy">سياسة الخصوصية</a>
+        <a href="/gallery">الألبوم</a>
+      </nav>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.min.js" defer></script>
+  <script src="/public/js/face-engine.js" defer></script>
+  <script src="/public/js/search-face.js" defer></script>
+</body>
+</html>

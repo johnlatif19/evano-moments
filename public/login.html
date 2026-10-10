@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#faf7f2" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>دخول المنظِّم — Evano Moments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/public/css/login.css" />
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="auth-card">
+      <header class="auth-head">
+        <a class="brand" href="/">
+          <span class="brand-mark"></span>
+          <span class="brand-name">Evano Moments</span>
+        </a>
+        <h1 class="auth-title">دخول المنظِّم</h1>
+        <p class="auth-sub">هذه الصفحة مخصّصة لإدارة الألبوم فقط.</p>
+      </header>
+
+      <form id="form-login" class="auth-form" novalidate autocomplete="on">
+        <div class="field">
+          <label for="username">اسم المستخدم</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            spellcheck="false"
+            required
+            maxlength="64"
+            aria-describedby="loginError"
+          />
+        </div>
+
+        <div class="field">
+          <label for="password">كلمة المرور</label>
+          <div class="password-wrap">
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="256"
+              aria-describedby="loginError"
+            />
+            <button
+              type="button"
+              class="toggle-password"
+              id="togglePassword"
+              aria-label="إظهار كلمة المرور"
+              aria-pressed="false"
+            >
+              <span class="eye"></span>
+            </button>
+          </div>
+        </div>
+
+        <p id="loginError" class="error" role="alert" hidden></p>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-login">
+          <span class="btn-label">تسجيل الدخول</span>
+          <span class="spinner" hidden></span>
+        </button>
+
+        <p class="auth-foot">
+          <a href="/">العودة إلى الموقع</a>
+        </p>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/public/js/login.js" defer></script>
+</body>
+</html>

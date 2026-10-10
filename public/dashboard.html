@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#faf7f2" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>لوحة التحكم — Evano Moments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/public/css/dashboard.css" />
+</head>
+<body>
+  <div class="app" id="app" hidden>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <a class="brand" href="/dashboard">
+          <span class="brand-mark"></span>
+          <span class="brand-name">Evano Moments</span>
+        </a>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item is-active" data-view="overview">
+          <span class="nav-dot"></span> نظرة عامة
+        </button>
+        <button class="nav-item" data-view="upload">
+          <span class="nav-dot"></span> رفع الصور
+        </button>
+        <button class="nav-item" data-view="library">
+          <span class="nav-dot"></span> مكتبة الصور
+        </button>
+        <button class="nav-item" data-view="jobs">
+          <span class="nav-dot"></span> مهام الفهرسة
+        </button>
+        <button class="nav-item" data-view="visitors">
+          <span class="nav-dot"></span> زوار الألبوم
+        </button>
+        <button class="nav-item" data-view="settings">
+          <span class="nav-dot"></span> الإعدادات
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <p class="admin-name" id="adminName"></p>
+        <button class="btn btn-ghost btn-sm btn-block" id="btn-logout">تسجيل الخروج</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="menu-toggle" id="menuToggle" aria-label="القائمة">
+          <span></span><span></span><span></span>
+        </button>
+        <h1 class="view-title" id="viewTitle">نظرة عامة</h1>
+        <div class="topbar-actions">
+          <a class="btn btn-ghost btn-sm" href="/" target="_blank" rel="noopener">زيارة الموقع</a>
+        </div>
+      </header>
+
+      <section class="view is-active" id="view-overview">
+        <div class="cards" id="overviewCards">
+          <div class="stat-card">
+            <p class="stat-label">إجمالي الصور</p>
+            <p class="stat-value" id="statTotal">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">مفهرسة بنجاح</p>
+            <p class="stat-value" id="statIndexed">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">قيد المعالجة</p>
+            <p class="stat-value" id="statPending">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">فشل الفهرسة</p>
+            <p class="stat-value" id="statFailed">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">وجوه مكتشفة</p>
+            <p class="stat-value" id="statFaces">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">زوار الألبوم</p>
+            <p class="stat-value" id="statVisitors">—</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2 class="panel-title">آخر النشاطات</h2>
+          <ul class="activity" id="activityList">
+            <li class="muted">لا توجد نشاطات بعد.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="view" id="view-upload">
+        <div class="panel">
+          <h2 class="panel-title">رفع الصور</h2>
+          <p class="panel-sub">اسحب الصور وأفلتها هنا، أو اخترها من جهازك. يتم رفع كل صورة على حدة مع إظهار التقدم.</p>
+
+          <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="منطقة رفع الصور">
+            <div class="dz-inner">
+              <p class="dz-title">اسحب الصور هنا</p>
+              <p class="dz-sub">JPEG · PNG · WebP · حتى 25 ميغابايت للصورة</p>
+              <button type="button" class="btn btn-primary" id="btn-pick">اختر صوراً</button>
+            </div>
+            <input type="file" id="filePicker" accept="image/jpeg,image/png,image/webp" multiple hidden />
+          </div>
+
+          <div class="upload-controls" id="uploadControls" hidden>
+            <div class="upload-summary">
+              <span id="uploadSummary">—</span>
+            </div>
+            <div class="upload-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="btn-upload-start">ابدأ الرفع</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-upload-clear">إفراغ القائمة</button>
+            </div>
+          </div>
+
+          <ul class="upload-list" id="uploadList"></ul>
+        </div>
+      </section>
+
+      <section class="view" id="view-library">
+        <div class="panel">
+          <div class="panel-head-row">
+            <h2 class="panel-title">مكتبة الصور</h2>
+            <div class="library-filters">
+              <select id="filterStatus" class="select">
+                <option value="">كل الحالات</option>
+                <option value="pending">قيد المعالجة</option>
+                <option value="indexed">مفهرسة</option>
+                <option value="failed">فاشلة</option>
+              </select>
+              <input type="search" id="searchBox" class="input" placeholder="بحث بالاسم…" />
+            </div>
+          </div>
+
+          <div class="lib-grid" id="libGrid"></div>
+          <div class="lib-empty" id="libEmpty" hidden>لا توجد صور مطابقة.</div>
+
+          <div class="lib-more">
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-lib-more" hidden>تحميل المزيد</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-jobs">
+        <div class="panel">
+          <h2 class="panel-title">مهام الفهرسة</h2>
+          <p class="panel-sub">تظهر هنا الصور التي فشلت في الفهرسة، ويمكن إعادة تشغيلها.</p>
+          <ul class="jobs-list" id="jobsList">
+            <li class="muted">لا توجد مهام فاشلة.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="view" id="view-visitors">
+        <div class="panel">
+          <div class="panel-head-row">
+            <h2 class="panel-title">زوار الألبوم</h2>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-visitors-refresh">تحديث</button>
+          </div>
+          <p class="panel-sub">هنا يظهر عدد الزوار الذين فتحوا الألبوم باستخدام الرمز، مع وقت الدخول وآخر نشاط.</p>
+
+          <div class="visitors-summary">
+            <div class="stat-card">
+              <p class="stat-label">إجمالي الجلسات</p>
+              <p class="stat-value" id="visTotal">—</p>
+            </div>
+            <div class="stat-card">
+              <p class="stat-label">جلسات نشطة الآن</p>
+              <p class="stat-value" id="visActive">—</p>
+            </div>
+            <div class="stat-card">
+              <p class="stat-label">آخر 24 ساعة</p>
+              <p class="stat-value" id="visLast24">—</p>
+            </div>
+          </div>
+
+          <div class="visitors-table-wrap">
+            <table class="visitors-table">
+              <thead>
+                <tr>
+                  <th>الوقت</th>
+                  <th>المعرّف المختصر</th>
+                  <th>IP مختصر</th>
+                  <th>الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="visitorsBody">
+                <tr><td colspan="4" class="muted">جارٍ التحميل…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="panel">
+          <h2 class="panel-title">الإعدادات</h2>
+          <p class="panel-sub">تُطبَّق التغييرات فوراً على الخدمة.</p>
+
+          <form id="form-settings" class="settings-form" novalidate>
+            <div class="field">
+              <label for="setThreshold">عتبة التشابه (0.30 – 0.80)</label>
+              <input id="setThreshold" name="similarityThreshold" type="number" step="0.01" min="0.30" max="0.80" />
+              <p class="help">القيم الأعلى تعني مطابقة أكثر صرامة.</p>
+            </div>
+
+            <div class="field">
+              <label for="setSelfieTtl">مدة الاحتفاظ ببيانات البحث (بالدقائق)</label>
+              <input id="setSelfieTtl" name="selfieRetentionMinutes" type="number" step="5" min="5" max="1440" />
+            </div>
+
+            <div class="field">
+              <label for="setRateLimit">حد البحث لكل جلسة (عدد)</label>
+              <input id="setRateLimit" name="searchRateLimit" type="number" step="1" min="1" max="100" />
+            </div>
+
+            <p id="settingsMsg" class="error" hidden></p>
+
+            <button type="submit" class="btn btn-primary" id="btn-save-settings">
+              <span class="btn-label">حفظ الإعدادات</span>
+              <span class="spinner" hidden></span>
+            </button>
+          </form>
+
+          <hr class="sep" />
+
+          <h3 class="sub-title">تغيير رمز الألبوم</h3>
+          <p class="panel-sub">يُستخدم رمز واحد لكل الزوار. يُحفظ كتجزئة SHA-256 على الخادم.</p>
+          <form id="form-code" class="settings-form" novalidate>
+            <div class="field">
+              <label for="newCode">رمز جديد</label>
+              <input id="newCode" name="newCode" type="password" minlength="4" maxlength="64" autocomplete="new-password" />
+            </div>
+            <div class="field">
+              <label for="confirmCode">تأكيد الرمز</label>
+              <input id="confirmCode" name="confirmCode" type="password" minlength="4" maxlength="64" autocomplete="new-password" />
+            </div>
+            <p id="codeMsg" class="error" hidden></p>
+            <button type="submit" class="btn btn-primary" id="btn-save-code">
+              <span class="btn-label">تحديث الرمز</span>
+              <span class="spinner" hidden></span>
+            </button>
+          </form>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/public/js/dashboard.js" defer></script>
+</body>
+</html>
