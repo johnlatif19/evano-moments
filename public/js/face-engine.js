@@ -19,6 +19,23 @@
     return readyPromise;
   }
 
+  async function detect(imageOrCanvas, options) {
+    await ensureReady();
+    const opts = new window.faceapi.TinyFaceDetectorOptions({
+      inputSize: (options && options.inputSize) || 416,
+      scoreThreshold: (options && options.scoreThreshold) || 0.5,
+    });
+    const results = await window.faceapi
+      .detectAllFaces(imageOrCanvas, opts)
+      .withFaceLandmarks(true)
+      .withFaceDescriptors();
+    return results.map((r) => ({
+      box: r.detection.box,
+      score: r.detection.score,
+      descriptor: Array.from(r.descriptor),
+    }));
+  }
+
   async function embed(imageData) {
     await ensureReady();
 
@@ -28,31 +45,56 @@
     const ctx = canvas.getContext("2d");
     ctx.putImageData(imageData, 0, 0);
 
-    const options = new window.faceapi.TinyFaceDetectorOptions({
-      inputSize: 320,
-      scoreThreshold: 0.5,
-    });
-
-    const result = await window.faceapi
-      .detectSingleFace(canvas, options)
-      .withFaceLandmarks(true)
-      .withFaceDescriptor();
-
-    if (!result) {
+    const results = await detect(canvas, { inputSize: 320, scoreThreshold: 0.5 });
+    if (results.length === 0) {
       throw new Error("no-face-detected");
     }
-
-    const desc = result.descriptor;
-    if (!desc || desc.length !== EMBEDDING_SIZE) {
+    results.sort((a, b) => b.score - a.score);
+    const best = results[0];
+    if (!best.descriptor || best.descriptor.length !== EMBEDDING_SIZE) {
       throw new Error("invalid-embedding");
     }
+    return best.descriptor;
+  }
 
-    return Array.from(desc);
+  async function embedFile(file, options) {
+    await ensureReady();
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error("invalid-image"));
+        i.src = url;
+      });
+      const maxDim = (options && options.maxDim) || 1024;
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      if (Math.max(w, h) > maxDim) {
+        const ratio = maxDim / Math.max(w, h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      const results = await detect(canvas, {
+        inputSize: (options && options.inputSize) || 608,
+        scoreThreshold: (options && options.scoreThreshold) || 0.5,
+      });
+      return results;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   }
 
   window.EvanoFace = {
     ready: ensureReady,
     embed,
+    detect,
+    embedFile,
     embeddingSize: EMBEDDING_SIZE,
   };
 })();
