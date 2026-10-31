@@ -14,7 +14,7 @@ const { z } = require("zod");
 
 const { getDb, admin } = require("./lib/firebase");
 const { sha256Hex, timingSafeEqualHex, newToken, createSigner } = require("./lib/auth");
-const { CONFIG, isValidEmbedding, cosineSimilarity } = require("./lib/face");
+const { CONFIG, isValidEmbedding, euclideanDistance, similarityFromDistance } = require("./lib/face");
 
 const app = express();
 const isProd = process.env.NODE_ENV === "production";
@@ -46,7 +46,7 @@ const ENV = {
   cloudinaryApiKey: required("CLOUDINARY_API_KEY"),
   cloudinaryApiSecret: required("CLOUDINARY_API_SECRET"),
   cloudinaryFolder: optional("CLOUDINARY_FOLDER", "evano-moments"),
-  similarityThreshold: Number(optional("SIMILARITY_THRESHOLD", String(CONFIG.DEFAULT_SIMILARITY_THRESHOLD))),
+  distanceThreshold: Number(optional("DISTANCE_THRESHOLD", String(CONFIG.DEFAULT_DISTANCE_THRESHOLD))),
   embeddingSize: Number(optional("EMBEDDING_SIZE", String(CONFIG.EMBEDDING_SIZE))),
   sessionTtlHours: Number(optional("SESSION_TTL_HOURS", "24"))
 };
@@ -212,7 +212,7 @@ async function getSettings() {
   const doc = await db.collection("eventSettings").doc("main").get();
   const data = doc.exists ? doc.data() : {};
   return {
-    similarityThreshold: typeof data.similarityThreshold === "number" ? data.similarityThreshold : ENV.similarityThreshold,
+    distanceThreshold: typeof data.distanceThreshold === "number" ? data.distanceThreshold : ENV.distanceThreshold,
     selfieRetentionMinutes: typeof data.selfieRetentionMinutes === "number" ? data.selfieRetentionMinutes : 60,
     searchRateLimit: typeof data.searchRateLimit === "number" ? data.searchRateLimit : 20,
     albumCodeHash: typeof data.albumCodeHash === "string" ? data.albumCodeHash : ENV.galleryCodeHash,
@@ -384,7 +384,7 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
   if (!parsed.success) return res.status(400).json({ ok: false, message: "بيانات البحث غير صالحة." });
 
   const settings = await getSettings();
-  const threshold = Math.min(Math.max(settings.similarityThreshold, 0.30), 0.80);
+  const threshold = Math.min(Math.max(settings.distanceThreshold, 0.30), 0.80);
   const embedding = parsed.data.embedding;
 
   if (embedding.length !== ENV.embeddingSize) {
@@ -406,11 +406,13 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
     const vec = Array.isArray(d.vector) ? d.vector : null;
     if (!vec || vec.length !== embedding.length) return;
     if (!isValidEmbedding(vec, ENV.embeddingSize)) return;
-    const sim = cosineSimilarity(embedding, vec);
-    if (sim >= threshold) scored.push({ photoId: d.photoId, score: sim });
+    const dist = euclideanDistance(embedding, vec);
+    if (Number.isFinite(dist) && dist <= threshold) {
+      scored.push({ photoId: d.photoId, distance: dist, score: similarityFromDistance(dist) });
+    }
   });
 
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => a.distance - b.distance);
 
   const top = [];
   const seen = new Set();
@@ -440,7 +442,8 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
       downloadUrl: data.downloadUrl || data.secureUrl,
       filename: data.originalFilename || (doc.id + ".jpg"),
       alt: data.originalFilename || "",
-      score: Number(top[i].score.toFixed(4))
+      score: Number(top[i].score.toFixed(4)),
+      distance: Number(top[i].distance.toFixed(4))
     });
   });
 
@@ -778,7 +781,7 @@ app.get("/api/admin/settings", requireAdmin, handle(async (req, res) => {
   res.json({
     ok: true,
     settings: {
-      similarityThreshold: s.similarityThreshold,
+      distanceThreshold: s.distanceThreshold,
       selfieRetentionMinutes: s.selfieRetentionMinutes,
       searchRateLimit: s.searchRateLimit,
       modelVersion: s.modelVersion
@@ -787,7 +790,7 @@ app.get("/api/admin/settings", requireAdmin, handle(async (req, res) => {
 }));
 
 const settingsSchema = z.object({
-  similarityThreshold: z.number().min(0.30).max(0.80),
+  distanceThreshold: z.number().min(0.30).max(0.80),
   selfieRetentionMinutes: z.number().int().min(5).max(1440),
   searchRateLimit: z.number().int().min(1).max(100)
 });
