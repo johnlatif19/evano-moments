@@ -3,6 +3,11 @@
 
   const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model";
   const EMBEDDING_SIZE = 128;
+  const DEFAULT_OPTIONS = {
+    maxDim: 1600,
+    inputSize: 1024,
+    scoreThreshold: 0.35
+  };
 
   let readyPromise = null;
 
@@ -49,9 +54,19 @@
     return canvas;
   }
 
+  function isValidDescriptor(desc) {
+    if (!Array.isArray(desc)) return false;
+    if (desc.length !== EMBEDDING_SIZE) return false;
+    for (let i = 0; i < desc.length; i++) {
+      if (typeof desc[i] !== "number") return false;
+      if (!Number.isFinite(desc[i])) return false;
+    }
+    return true;
+  }
+
   async function detectOnCanvas(canvas, options) {
-    const inputSize = (options && options.inputSize) || 1024;
-    const scoreThreshold = (options && options.scoreThreshold) || 0.35;
+    const inputSize = (options && options.inputSize) || DEFAULT_OPTIONS.inputSize;
+    const scoreThreshold = (options && options.scoreThreshold) || DEFAULT_OPTIONS.scoreThreshold;
 
     const opts = new window.faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold });
 
@@ -63,7 +78,7 @@
     if (results.length === 0) {
       const retryOpts = new window.faceapi.TinyFaceDetectorOptions({
         inputSize: 1280,
-        scoreThreshold: 0.25,
+        scoreThreshold: 0.25
       });
       results = await window.faceapi
         .detectAllFaces(canvas, retryOpts)
@@ -71,46 +86,29 @@
         .withFaceDescriptors();
     }
 
-    return results.map((r) => ({
-      box: r.detection.box,
-      score: r.detection.score,
-      descriptor: Array.from(r.descriptor),
-    }));
-  }
-
-  async function embed(imageData) {
-    await ensureReady();
-
-    const canvas = document.createElement("canvas");
-    canvas.width = imageData.width;
-    canvas.height = imageData.height;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.putImageData(imageData, 0, 0);
-
-    const results = await detectOnCanvas(canvas, { inputSize: 416, scoreThreshold: 0.4 });
-    if (results.length === 0) throw new Error("no-face-detected");
-    results.sort((a, b) => b.score - a.score);
-    const best = results[0];
-    if (!best.descriptor || best.descriptor.length !== EMBEDDING_SIZE) {
-      throw new Error("invalid-embedding");
-    }
-    return best.descriptor;
+    return results
+      .map((r) => ({
+        box: r.detection.box,
+        score: r.detection.score,
+        descriptor: Array.from(r.descriptor)
+      }))
+      .filter((r) => isValidDescriptor(r.descriptor));
   }
 
   async function detect(imageOrCanvas, options) {
     await ensureReady();
     const canvas = imageOrCanvas instanceof HTMLCanvasElement
       ? imageOrCanvas
-      : drawToCanvas(imageOrCanvas, (options && options.maxDim) || 1600);
+      : drawToCanvas(imageOrCanvas, (options && options.maxDim) || DEFAULT_OPTIONS.maxDim);
     return detectOnCanvas(canvas, options);
   }
 
   async function embedFile(fileOrUrl, options) {
     await ensureReady();
 
-    const maxDim = (options && options.maxDim) || 1600;
-    const inputSize = (options && options.inputSize) || 1024;
-    const scoreThreshold = (options && options.scoreThreshold) || 0.35;
+    const maxDim = (options && options.maxDim) || DEFAULT_OPTIONS.maxDim;
+    const inputSize = (options && options.inputSize) || DEFAULT_OPTIONS.inputSize;
+    const scoreThreshold = (options && options.scoreThreshold) || DEFAULT_OPTIONS.scoreThreshold;
 
     let createdUrl = null;
     try {
@@ -124,7 +122,6 @@
 
       const canvas = drawToCanvas(img, maxDim);
       const results = await detectOnCanvas(canvas, { inputSize, scoreThreshold });
-
       results.sort((a, b) => b.score - a.score);
       return results;
     } finally {
@@ -132,18 +129,25 @@
     }
   }
 
-  async function embedFileOne(fileOrUrl, options) {
+  async function computeOneDescriptor(fileOrUrl, options) {
     const results = await embedFile(fileOrUrl, options);
-    if (results.length === 0) throw new Error("no-face-detected");
-    return results[0].descriptor;
+    if (results.length === 0) {
+      throw new Error("no-face-detected");
+    }
+    const best = results[0];
+    if (!isValidDescriptor(best.descriptor)) {
+      throw new Error("invalid-embedding");
+    }
+    return best.descriptor;
   }
 
   window.EvanoFace = {
     ready: ensureReady,
-    embed,
     detect,
     embedFile,
-    embedFileOne,
+    computeOneDescriptor,
+    isValidDescriptor,
     embeddingSize: EMBEDDING_SIZE,
+    defaults: DEFAULT_OPTIONS
   };
 })();
