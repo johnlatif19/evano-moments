@@ -9,9 +9,12 @@ const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const path = require("path");
-const admin = require("firebase-admin");
 const cloudinary = require("cloudinary").v2;
 const { z } = require("zod");
+
+const { getDb, admin } = require("./lib/firebase");
+const { sha256Hex, timingSafeEqualHex, newToken, createSigner } = require("./lib/auth");
+const { CONFIG, isValidEmbedding, cosineSimilarity } = require("./lib/face");
 
 const app = express();
 const isProd = process.env.NODE_ENV === "production";
@@ -30,25 +33,6 @@ function optional(name, fallback) {
   return v;
 }
 
-function sha256Hex(input) {
-  return crypto.createHash("sha256").update(String(input), "utf8").digest("hex");
-}
-
-function timingSafeEqualHex(a, b) {
-  try {
-    const ba = Buffer.from(String(a), "hex");
-    const bb = Buffer.from(String(b), "hex");
-    if (ba.length !== bb.length) return false;
-    return crypto.timingSafeEqual(ba, bb);
-  } catch {
-    return false;
-  }
-}
-
-function newToken(bytes) {
-  return crypto.randomBytes(bytes || 32).toString("hex");
-}
-
 const ENV = {
   nodeEnv: optional("NODE_ENV", "development"),
   appBaseUrl: optional("APP_BASE_URL", "http://localhost:3000"),
@@ -62,29 +46,20 @@ const ENV = {
   cloudinaryApiKey: required("CLOUDINARY_API_KEY"),
   cloudinaryApiSecret: required("CLOUDINARY_API_SECRET"),
   cloudinaryFolder: optional("CLOUDINARY_FOLDER", "evano-moments"),
-  similarityThreshold: Number(optional("SIMILARITY_THRESHOLD", "0.55")),
-  embeddingSize: Number(optional("EMBEDDING_SIZE", "128")),
-  sessionTtlHours: Number(optional("SESSION_TTL_HOURS", "24")),
+  similarityThreshold: Number(optional("SIMILARITY_THRESHOLD", String(CONFIG.DEFAULT_SIMILARITY_THRESHOLD))),
+  embeddingSize: Number(optional("EMBEDDING_SIZE", String(CONFIG.EMBEDDING_SIZE))),
+  sessionTtlHours: Number(optional("SESSION_TTL_HOURS", "24"))
 };
 
-let serviceAccount;
-try {
-  serviceAccount = JSON.parse(ENV.firebaseServiceAccountJson);
-} catch {
-  throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON ليس JSON صالحاً.");
-}
-
-if (!admin.apps.length) {
-  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-}
-
-const db = admin.firestore();
+const db = getDb();
+const signer = createSigner(ENV.sessionSecret, ENV.csrfSecret);
+const { signSession, verifySession, issueCsrf, verifyCsrf } = signer;
 
 cloudinary.config({
   cloud_name: ENV.cloudinaryCloudName,
   api_key: ENV.cloudinaryApiKey,
   api_secret: ENV.cloudinaryApiSecret,
-  secure: true,
+  secure: true
 });
 
 app.disable("x-powered-by");
@@ -102,11 +77,11 @@ app.use(helmet({
       "connect-src": ["'self'", "https://api.cloudinary.com"],
       "frame-ancestors": ["'none'"],
       "base-uri": ["'self'"],
-      "form-action": ["'self'"],
-    },
+      "form-action": ["'self'"]
+    }
   },
   crossOriginResourcePolicy: { policy: "same-site" },
-  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" }
 }));
 
 app.use(cors({ origin: ENV.appBaseUrl, credentials: true }));
@@ -115,65 +90,30 @@ app.use(express.urlencoded({ extended: false, limit: "64kb" }));
 app.use(cookieParser());
 
 const PUBLIC_DIR = path.join(__dirname, "public");
-app.use(express.static(PUBLIC_DIR, {
-  index: false,
-  maxAge: isProd ? "1h" : 0,
-  setHeaders: (res, p) => {
-    if (p.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
-  },
-}));
 
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 10,
-  standardHeaders: true, legacyHeaders: false,
-  message: { ok: false, message: "محاولات كثيرة. حاول لاحقاً." },
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, message: "محاولات كثيرة. حاول لاحقاً." }
 });
 
 const galleryAccessLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 30,
-  standardHeaders: true, legacyHeaders: false,
-  message: { ok: false, message: "محاولات كثيرة. حاول لاحقاً." },
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, message: "محاولات كثيرة. حاول لاحقاً." }
 });
 
 const guestSearchLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, max: 20,
-  standardHeaders: true, legacyHeaders: false,
-  message: { ok: false, message: "عدد كبير من عمليات البحث. حاول لاحقاً." },
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, message: "عدد كبير من عمليات البحث. حاول لاحقاً." }
 });
-
-function signSession(payload) {
-  const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-  const sig = crypto.createHmac("sha256", ENV.sessionSecret).update(body).digest("base64url");
-  return body + "." + sig;
-}
-
-function verifySession(token) {
-  if (!token || typeof token !== "string" || !token.includes(".")) return null;
-  const [body, sig] = token.split(".");
-  const expected = crypto.createHmac("sha256", ENV.sessionSecret).update(body).digest("base64url");
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (!payload || typeof payload !== "object") return null;
-    if (payload.exp && Date.now() > payload.exp) return null;
-    return payload;
-  } catch { return null; }
-}
-
-function issueCsrf(sessionId) {
-  const raw = newToken(18);
-  const sig = crypto.createHmac("sha256", ENV.csrfSecret).update(sessionId + ":" + raw).digest("hex");
-  return raw + "." + sig;
-}
-
-function verifyCsrf(sessionId, token) {
-  if (!token || typeof token !== "string" || !token.includes(".")) return false;
-  const [raw, sig] = token.split(".");
-  const expected = crypto.createHmac("sha256", ENV.csrfSecret).update(sessionId + ":" + raw).digest("hex");
-  return timingSafeEqualHex(sig, expected);
-}
 
 const COOKIE_BASE = { httpOnly: true, secure: isProd, sameSite: "lax", path: "/" };
 
@@ -182,8 +122,11 @@ function setAdminSession(res, sessionId, csrf) {
   const token = signSession({ sid: sessionId, role: "admin", exp });
   res.cookie("admin_session", token, { ...COOKIE_BASE, maxAge: ENV.sessionTtlHours * 60 * 60 * 1000 });
   res.cookie("admin_csrf", csrf, {
-    httpOnly: false, secure: isProd, sameSite: "lax", path: "/",
-    maxAge: ENV.sessionTtlHours * 60 * 60 * 1000,
+    httpOnly: false,
+    secure: isProd,
+    sameSite: "lax",
+    path: "/",
+    maxAge: ENV.sessionTtlHours * 60 * 60 * 1000
   });
 }
 
@@ -197,8 +140,11 @@ function setGallerySession(res, sessionId) {
   const token = signSession({ sid: sessionId, role: "gallery", exp });
   res.cookie("gallery_session", token, { ...COOKIE_BASE, maxAge: ENV.sessionTtlHours * 60 * 60 * 1000 });
   res.cookie("gallery_csrf", issueCsrf(sessionId), {
-    httpOnly: false, secure: isProd, sameSite: "lax", path: "/",
-    maxAge: ENV.sessionTtlHours * 60 * 60 * 1000,
+    httpOnly: false,
+    secure: isProd,
+    sameSite: "lax",
+    path: "/",
+    maxAge: ENV.sessionTtlHours * 60 * 60 * 1000
   });
 }
 
@@ -263,7 +209,7 @@ async function getSettings() {
     selfieRetentionMinutes: typeof data.selfieRetentionMinutes === "number" ? data.selfieRetentionMinutes : 60,
     searchRateLimit: typeof data.searchRateLimit === "number" ? data.searchRateLimit : 20,
     albumCodeHash: typeof data.albumCodeHash === "string" ? data.albumCodeHash : ENV.galleryCodeHash,
-    modelVersion: typeof data.modelVersion === "string" ? data.modelVersion : "face-api@1.7-tiny",
+    modelVersion: typeof data.modelVersion === "string" ? data.modelVersion : CONFIG.MODEL_VERSION
   };
 }
 
@@ -273,7 +219,7 @@ async function saveSettings(patch) {
 
 const adminLoginSchema = z.object({
   username: z.string().min(1).max(64),
-  password: z.string().min(1).max(256),
+  password: z.string().min(1).max(256)
 });
 
 app.post("/api/admin/login", loginLimiter, handle(async (req, res) => {
@@ -295,7 +241,7 @@ app.post("/api/admin/login", loginLimiter, handle(async (req, res) => {
     username: ENV.adminUsername,
     createdAt: Date.now(),
     expiresAt: Date.now() + ENV.sessionTtlHours * 60 * 60 * 1000,
-    ip: req.ip,
+    ip: req.ip
   });
 
   setAdminSession(res, sessionId, csrf);
@@ -323,7 +269,7 @@ app.get("/api/admin/session", handle(async (req, res) => {
     ok: true,
     authenticated: true,
     admin: { username: doc.data().username || ENV.adminUsername },
-    csrf: req.cookies.admin_csrf || null,
+    csrf: req.cookies.admin_csrf || null
   });
 }));
 
@@ -346,7 +292,7 @@ app.post("/api/gallery/access", galleryAccessLimiter, handle(async (req, res) =>
     lastSeenAt: now,
     expiresAt: now + ENV.sessionTtlHours * 60 * 60 * 1000,
     ip: req.ip,
-    userAgent: String(req.get("user-agent") || "").slice(0, 200),
+    userAgent: String(req.get("user-agent") || "").slice(0, 200)
   });
 
   setGallerySession(res, sessionId);
@@ -406,7 +352,7 @@ app.get("/api/gallery/photos", requireGallery, handle(async (req, res) => {
       filename: data.originalFilename || (d.id + ".jpg"),
       width: data.width,
       height: data.height,
-      bytes: data.bytes,
+      bytes: data.bytes
     };
   });
 
@@ -414,14 +360,16 @@ app.get("/api/gallery/photos", requireGallery, handle(async (req, res) => {
   try {
     const totalSnap = await db.collection("photos").where("status", "==", "indexed").count().get();
     total = totalSnap.data().count;
-  } catch { total = items.length; }
+  } catch {
+    total = items.length;
+  }
 
   res.json({ ok: true, items, nextCursor, total });
 }));
 
 const searchSchema = z.object({
   embedding: z.array(z.number()).min(32).max(2048),
-  sessionId: z.string().max(128).optional().nullable(),
+  sessionId: z.string().max(128).optional().nullable()
 });
 
 app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, handle(async (req, res) => {
@@ -429,21 +377,29 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
   if (!parsed.success) return res.status(400).json({ ok: false, message: "بيانات البحث غير صالحة." });
 
   const settings = await getSettings();
-  const threshold = settings.similarityThreshold;
+  const threshold = Math.min(Math.max(settings.similarityThreshold, 0.30), 0.80);
   const embedding = parsed.data.embedding;
 
   if (embedding.length !== ENV.embeddingSize) {
     return res.status(400).json({ ok: false, message: "أبعاد التمثيل غير صحيحة." });
   }
 
-  const all = await db.collection("faceEmbeddings").limit(10000).get();
+  if (!isValidEmbedding(embedding, ENV.embeddingSize)) {
+    return res.status(400).json({ ok: false, message: "التمثيل الرقمي غير صالح." });
+  }
+
+  const all = await db.collection("faceEmbeddings")
+    .select("photoId", "vector")
+    .limit(CONFIG.MAX_EMBEDDINGS_TO_SCAN)
+    .get();
 
   const scored = [];
   all.forEach((doc) => {
     const d = doc.data() || {};
     const vec = Array.isArray(d.vector) ? d.vector : null;
     if (!vec || vec.length !== embedding.length) return;
-    const sim = 1 - cosineDistance(embedding, vec);
+    if (!isValidEmbedding(vec, ENV.embeddingSize)) return;
+    const sim = cosineSimilarity(embedding, vec);
     if (sim >= threshold) scored.push({ photoId: d.photoId, score: sim });
   });
 
@@ -455,7 +411,7 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
     if (!s.photoId || seen.has(s.photoId)) continue;
     seen.add(s.photoId);
     top.push(s);
-    if (top.length >= 60) break;
+    if (top.length >= CONFIG.MAX_FACES_PER_SEARCH) break;
   }
 
   if (top.length === 0) {
@@ -477,7 +433,7 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
       downloadUrl: data.downloadUrl || data.secureUrl,
       filename: data.originalFilename || (doc.id + ".jpg"),
       alt: data.originalFilename || "",
-      score: Number(top[i].score.toFixed(4)),
+      score: Number(top[i].score.toFixed(4))
     });
   });
 
@@ -487,14 +443,14 @@ app.post("/api/guest/search", guestSearchLimiter, requireGallery, requireCsrf, h
     createdAt: Date.now(),
     expiresAt,
     embedding,
-    matches: results.length,
+    matches: results.length
   }, { merge: true });
 
   res.json({ ok: true, results, sessionId });
 }));
 
 const deleteSessionSchema = z.object({
-  sessionId: z.string().max(128).optional().nullable(),
+  sessionId: z.string().max(128).optional().nullable()
 });
 
 app.post("/api/guest/search-session/delete", requireGallery, requireCsrf, handle(async (req, res) => {
@@ -503,17 +459,6 @@ app.post("/api/guest/search-session/delete", requireGallery, requireCsrf, handle
   if (sid) await db.collection("guestSearchSessions").doc(sid).delete().catch(() => {});
   res.json({ ok: true });
 }));
-
-function cosineDistance(a, b) {
-  let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i], y = b[i];
-    dot += x * y; na += x * x; nb += y * y;
-  }
-  const denom = Math.sqrt(na) * Math.sqrt(nb);
-  if (denom === 0) return 1;
-  return 1 - (dot / denom);
-}
 
 app.get("/api/admin/stats", requireAdmin, handle(async (req, res) => {
   const photosCol = db.collection("photos");
@@ -524,7 +469,7 @@ app.get("/api/admin/stats", requireAdmin, handle(async (req, res) => {
     photosCol.where("status", "==", "pending").count().get(),
     photosCol.where("status", "==", "failed").count().get(),
     db.collection("faceEmbeddings").count().get(),
-    db.collection("gallerySessions").count().get(),
+    db.collection("gallerySessions").count().get()
   ]);
 
   let recentActivity = [];
@@ -534,10 +479,12 @@ app.get("/api/admin/stats", requireAdmin, handle(async (req, res) => {
       const data = d.data() || {};
       return {
         label: (data.originalFilename || d.id) + " — " + (data.status || "pending"),
-        at: data.createdAt || Date.now(),
+        at: data.createdAt || Date.now()
       };
     });
-  } catch { recentActivity = []; }
+  } catch {
+    recentActivity = [];
+  }
 
   res.json({
     ok: true,
@@ -548,8 +495,8 @@ app.get("/api/admin/stats", requireAdmin, handle(async (req, res) => {
       failedPhotos: failed.data().count,
       totalFaces: faces.data().count,
       galleryVisitors: visitors.data().count,
-      recentActivity,
-    },
+      recentActivity
+    }
   });
 }));
 
@@ -566,7 +513,7 @@ app.get("/api/admin/visitors", requireAdmin, handle(async (req, res) => {
         lastSeenAt: data.lastSeenAt || null,
         expiresAt: data.expiresAt || null,
         ip: data.ip || "",
-        active: !!(data.expiresAt && data.expiresAt > now),
+        active: !!(data.expiresAt && data.expiresAt > now)
       };
     });
   } catch {
@@ -580,7 +527,7 @@ app.get("/api/admin/visitors", requireAdmin, handle(async (req, res) => {
         lastSeenAt: data.lastSeenAt || null,
         expiresAt: data.expiresAt || null,
         ip: data.ip || "",
-        active: !!(data.expiresAt && data.expiresAt > now),
+        active: !!(data.expiresAt && data.expiresAt > now)
       };
     }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }
@@ -595,7 +542,7 @@ app.get("/api/admin/visitors", requireAdmin, handle(async (req, res) => {
 const uploadSignatureSchema = z.object({
   filename: z.string().min(1).max(255),
   size: z.number().int().positive().max(25 * 1024 * 1024),
-  type: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  type: z.enum(["image/jpeg", "image/png", "image/webp"])
 });
 
 app.post("/api/admin/photos/upload-signature", requireAdmin, requireCsrf, handle(async (req, res) => {
@@ -616,8 +563,11 @@ app.post("/api/admin/photos/upload-signature", requireAdmin, requireCsrf, handle
     signature: {
       cloudName: ENV.cloudinaryCloudName,
       apiKey: ENV.cloudinaryApiKey,
-      timestamp, signature, folder, publicId,
-    },
+      timestamp,
+      signature,
+      folder,
+      publicId
+    }
   });
 }));
 
@@ -629,7 +579,7 @@ const registerSchema = z.object({
   bytes: z.number().int().positive().max(50 * 1024 * 1024),
   format: z.string().min(1).max(10),
   originalFilename: z.string().max(255).optional().default(""),
-  faces: z.array(z.array(z.number()).min(32).max(2048)).max(50).optional().default([]),
+  faces: z.array(z.array(z.number()).min(32).max(2048)).max(50).optional().default([])
 });
 
 app.post("/api/admin/photos/register", requireAdmin, requireCsrf, handle(async (req, res) => {
@@ -642,13 +592,15 @@ app.post("/api/admin/photos/register", requireAdmin, requireCsrf, handle(async (
 
   const thumbUrl = cloudinary.url(data.publicId, {
     secure: true,
-    transformation: [{ width: 600, height: 600, crop: "fill", quality: "auto", fetch_format: "auto" }],
+    transformation: [{ width: 600, height: 600, crop: "fill", quality: "auto", fetch_format: "auto" }]
   });
 
   const dlUrl = cloudinary.url(data.publicId, { secure: true, flags: "attachment" });
 
-  const validFaces = data.faces.filter((v) => Array.isArray(v) && v.length === ENV.embeddingSize);
+  const validFaces = data.faces.filter((v) => isValidEmbedding(v, ENV.embeddingSize));
   const status = validFaces.length > 0 ? "indexed" : "pending";
+
+  const settings = await getSettings();
 
   await photoRef.set({
     publicId: data.publicId,
@@ -664,8 +616,8 @@ app.post("/api/admin/photos/register", requireAdmin, requireCsrf, handle(async (
     faceCount: validFaces.length,
     createdAt: now,
     updatedAt: now,
-    modelVersion: (await getSettings()).modelVersion,
-    checksum: sha256Hex(data.publicId + ":" + data.bytes),
+    modelVersion: settings.modelVersion,
+    checksum: sha256Hex(data.publicId + ":" + data.bytes)
   });
 
   if (validFaces.length > 0) {
@@ -710,7 +662,7 @@ app.get("/api/admin/photos", requireAdmin, handle(async (req, res) => {
       height: data.height || 0,
       status: data.status || "pending",
       faceCount: data.faceCount || 0,
-      createdAt: data.createdAt || null,
+      createdAt: data.createdAt || null
     };
   });
 
@@ -754,7 +706,7 @@ app.post("/api/admin/photos/:id/reindex", requireAdmin, requireCsrf, handle(asyn
 }));
 
 const facesSchema = z.object({
-  faces: z.array(z.array(z.number()).min(32).max(2048)).max(50),
+  faces: z.array(z.array(z.number()).min(32).max(2048)).max(50)
 });
 
 app.post("/api/admin/photos/:id/faces", requireAdmin, requireCsrf, handle(async (req, res) => {
@@ -765,7 +717,7 @@ app.post("/api/admin/photos/:id/faces", requireAdmin, requireCsrf, handle(async 
   const parsed = facesSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, message: "بيانات الوجوه غير صالحة." });
 
-  const valid = parsed.data.faces.filter((v) => Array.isArray(v) && v.length === ENV.embeddingSize);
+  const valid = parsed.data.faces.filter((v) => isValidEmbedding(v, ENV.embeddingSize));
 
   const embSnap = await db.collection("faceEmbeddings").where("photoId", "==", id).get();
   const batch = db.batch();
@@ -781,7 +733,7 @@ app.post("/api/admin/photos/:id/faces", requireAdmin, requireCsrf, handle(async 
     status: valid.length > 0 ? "indexed" : "pending",
     faceCount: valid.length,
     updatedAt: now,
-    lastError: valid.length === 0 ? "no-faces-detected" : null,
+    lastError: valid.length === 0 ? "no-faces-detected" : null
   });
 
   await batch.commit();
@@ -822,15 +774,15 @@ app.get("/api/admin/settings", requireAdmin, handle(async (req, res) => {
       similarityThreshold: s.similarityThreshold,
       selfieRetentionMinutes: s.selfieRetentionMinutes,
       searchRateLimit: s.searchRateLimit,
-      modelVersion: s.modelVersion,
-    },
+      modelVersion: s.modelVersion
+    }
   });
 }));
 
 const settingsSchema = z.object({
   similarityThreshold: z.number().min(0.30).max(0.80),
   selfieRetentionMinutes: z.number().int().min(5).max(1440),
-  searchRateLimit: z.number().int().min(1).max(100),
+  searchRateLimit: z.number().int().min(1).max(100)
 });
 
 app.patch("/api/admin/settings", requireAdmin, requireCsrf, handle(async (req, res) => {
