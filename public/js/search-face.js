@@ -5,7 +5,7 @@
     session: "/api/gallery/session",
     access: "/api/gallery/access",
     search: "/api/guest/search",
-    deleteSession: "/api/guest/search-session/delete",
+    deleteSession: "/api/guest/search-session/delete"
   };
 
   const MAX_FILE_BYTES = 8 * 1024 * 1024;
@@ -20,7 +20,7 @@
     selfiePreviewUrl: null,
     sessionId: null,
     abortController: null,
-    busy: false,
+    busy: false
   };
 
   const el = (id) => document.getElementById(id);
@@ -66,7 +66,7 @@
     sessionControls: el("sessionControls"),
     btnDeleteSession: el("btn-delete-session"),
 
-    toast: el("toast"),
+    toast: el("toast")
   };
 
   function getCookie(name) {
@@ -115,7 +115,7 @@
 
   function formatBytes(bytes) {
     if (!bytes) return "0 B";
-    const u = ["B","KB","MB","GB"];
+    const u = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + " " + u[i];
   }
@@ -240,7 +240,7 @@
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code })
       });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) {
@@ -274,23 +274,6 @@
     refs.progressBar.setAttribute("aria-valuenow", String(val));
   }
 
-  async function computeEmbedding(file, signal) {
-    const bitmap = await createImageBitmap(file);
-    const canvas = document.createElement("canvas");
-    const size = 224;
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(bitmap, 0, 0, size, size);
-    bitmap.close?.();
-    if (signal && signal.aborted) throw new DOMException("aborted", "AbortError");
-    const imageData = ctx.getImageData(0, 0, size, size);
-    const embedding = await window.EvanoFace.embed(imageData);
-    if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
-      throw new Error("لم يتم العثور على وجه واضح في الصورة.");
-    }
-    return embedding;
-  }
-
   async function onSearch() {
     if (state.busy) return;
     if (!refs.consentCheckbox.checked) {
@@ -300,6 +283,12 @@
     }
     if (!state.selfieFile) {
       refs.selfieError.textContent = "اختر صورة سيلفي أولاً.";
+      refs.selfieError.hidden = false;
+      return;
+    }
+
+    if (!window.EvanoFace) {
+      refs.selfieError.textContent = "تعذّر تحميل محرّك التعرف على الوجه. أعد تحميل الصفحة.";
       refs.selfieError.hidden = false;
       return;
     }
@@ -315,7 +304,16 @@
     try {
       setProgress(28);
       refs.searchingText.textContent = "جارٍ تحليل الوجه…";
-      const embedding = await computeEmbedding(state.selfieFile, state.abortController.signal);
+
+      const descriptor = await window.EvanoFace.computeOneDescriptor(state.selfieFile);
+
+      if (state.abortController.signal.aborted) {
+        throw new DOMException("aborted", "AbortError");
+      }
+
+      if (!window.EvanoFace.isValidDescriptor(descriptor)) {
+        throw new Error("لم نتمكن من الحصول على بصمة وجه صالحة.");
+      }
 
       setProgress(62);
       refs.searchingText.textContent = "جارٍ مطابقة الصور…";
@@ -324,7 +322,7 @@
         credentials: "include",
         signal: state.abortController.signal,
         headers: csrfHeaders(),
-        body: JSON.stringify({ embedding, sessionId: state.sessionId }),
+        body: JSON.stringify({ embedding: descriptor, sessionId: state.sessionId })
       });
       setProgress(88);
       const data = await safeJson(res);
@@ -350,6 +348,10 @@
       if (err && err.name === "AbortError") {
         setResultState("placeholder");
         showToast("تم إلغاء البحث.");
+      } else if (err && err.message === "no-face-detected") {
+        refs.selfieError.textContent = "لم نجد وجهاً واضحاً في الصورة. جرّب صورة أوضح.";
+        refs.selfieError.hidden = false;
+        setResultState("placeholder");
       } else {
         refs.errorText.textContent = err.message || "حدث خطأ غير متوقع.";
         setResultState("error");
@@ -422,7 +424,7 @@
         method: "POST",
         credentials: "include",
         headers: csrfHeaders(),
-        body: JSON.stringify({ sessionId: state.sessionId }),
+        body: JSON.stringify({ sessionId: state.sessionId })
       });
     } catch {}
     state.sessionId = null;
