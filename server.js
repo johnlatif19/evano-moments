@@ -35,7 +35,7 @@ function optional(name, fallback) {
 
 const ENV = {
   nodeEnv: optional("NODE_ENV", "development"),
-  appBaseUrl: optional("APP_BASE_URL", "https://evano-moments.vercel.app"),
+  appBaseUrl: optional("APP_BASE_URL", "http://localhost:3000"),
   adminUsername: required("ADMIN_USERNAME"),
   adminPasswordHash: required("ADMIN_PASSWORD_HASH"),
   sessionSecret: required("SESSION_SECRET"),
@@ -90,6 +90,13 @@ app.use(express.urlencoded({ extended: false, limit: "64kb" }));
 app.use(cookieParser());
 
 const PUBLIC_DIR = path.join(__dirname, "public");
+app.use(express.static(PUBLIC_DIR, {
+  index: false,
+  maxAge: isProd ? "1h" : 0,
+  setHeaders: (res, p) => {
+    if (p.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
+  }
+}));
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -801,11 +808,18 @@ app.post("/api/admin/settings/album-code", requireAdmin, requireCsrf, handle(asy
   res.json({ ok: true });
 }));
 
+app.get("/login", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "login.html")));
+app.get("/dashboard", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "dashboard.html")));
+app.get("/gallery", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "gallery.html")));
+app.get("/search-face", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "search-face.html")));
+app.get("/privacy", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "privacy.html")));
+app.get("/", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
+
 app.use((req, res) => {
   if (req.path.startsWith("/api/")) {
     return res.status(404).json({ ok: false, message: "غير موجود." });
   }
-  res.status(404).json({ ok: false, message: "غير موجود." });
+  res.status(404).sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
 app.use((err, req, res, next) => {
