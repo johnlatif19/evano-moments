@@ -13,7 +13,7 @@
     reindex: (id) => "/api/admin/photos/" + encodeURIComponent(id) + "/reindex",
     remove: (id) => "/api/admin/photos/" + encodeURIComponent(id),
     visitors: "/api/admin/visitors",
-    changeCode: "/api/admin/settings/album-code",
+    changeCode: "/api/admin/settings/album-code"
   };
 
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -32,7 +32,7 @@
     libFilter: "",
     libQuery: "",
     faceReady: false,
-    reindexing: false,
+    reindexing: false
   };
 
   const el = (id) => document.getElementById(id);
@@ -83,7 +83,7 @@
     confirmCode: el("confirmCode"),
     codeMsg: el("codeMsg"),
     btnSaveCode: el("btn-save-code"),
-    toast: el("toast"),
+    toast: el("toast")
   };
 
   function showToast(message, kind) {
@@ -131,7 +131,7 @@
 
   function fmtBytes(bytes) {
     if (!bytes && bytes !== 0) return "—";
-    const u = ["B","KB","MB","GB","TB"];
+    const u = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.min(u.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
     return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + " " + u[i];
   }
@@ -197,7 +197,7 @@
       await fetch(API.logout, {
         method: "POST",
         credentials: "include",
-        headers: csrfHeaders(),
+        headers: csrfHeaders()
       });
     } catch {}
     window.location.replace("/login");
@@ -210,7 +210,7 @@
       library: "مكتبة الصور",
       jobs: "مهام الفهرسة",
       visitors: "زوار الألبوم",
-      settings: "الإعدادات",
+      settings: "الإعدادات"
     };
     refs.navItems.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -302,7 +302,7 @@
         error: null,
         previewUrl: URL.createObjectURL(file),
         photoId: null,
-        faceCount: 0,
+        faceCount: 0
       };
       state.uploadQueue.push(item);
     }
@@ -397,18 +397,12 @@
     try {
       const ok = await ensureFaceEngine();
       if (ok) {
-        const detected = await window.EvanoFace.embedFile(item.file, {
-          maxDim: 1600,
-          inputSize: 1024,
-          scoreThreshold: 0.35,
-        });
+        const detected = await window.EvanoFace.embedFile(item.file);
         faces = detected
           .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
           .map((d) => d.descriptor);
-        console.log("[upload] detected faces for " + item.file.name + ":", faces.length);
       }
     } catch (err) {
-      console.warn("[upload] face detection failed:", err);
       faces = [];
     }
 
@@ -425,8 +419,8 @@
         body: JSON.stringify({
           filename: item.file.name,
           size: item.file.size,
-          type: item.file.type,
-        }),
+          type: item.file.type
+        })
       });
       const sigData = await safeJson(sigRes);
       if (!sigRes.ok || !sigData.ok || !sigData.signature) {
@@ -485,8 +479,8 @@
           bytes: uploaded.bytes,
           format: uploaded.format,
           originalFilename: item.file.name,
-          faces,
-        }),
+          faces
+        })
       });
       const regData = await safeJson(regRes);
       if (!regRes.ok || !regData.ok) {
@@ -668,22 +662,16 @@
       if (!ok) throw new Error("المحرك غير جاهز.");
 
       const file = await fetchImageAsFile(item.url || item.thumbnailUrl, item.originalFilename || "photo.jpg");
-      const detected = await window.EvanoFace.embedFile(file, {
-        maxDim: 1600,
-        inputSize: 1024,
-        scoreThreshold: 0.35,
-      });
+      const detected = await window.EvanoFace.embedFile(file);
       const faces = detected
         .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
         .map((d) => d.descriptor);
-
-      console.log("[index] " + (item.originalFilename || item.id) + " → " + faces.length + " وجه");
 
       const res = await fetch("/api/admin/photos/" + encodeURIComponent(item.id) + "/faces", {
         method: "POST",
         credentials: "include",
         headers: csrfHeaders(),
-        body: JSON.stringify({ faces }),
+        body: JSON.stringify({ faces })
       });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّرت الفهرسة.");
@@ -726,29 +714,22 @@
         for (const item of items) {
           try {
             const file = await fetchImageAsFile(item.url || item.thumbnailUrl, item.originalFilename || "photo.jpg");
-            const detected = await window.EvanoFace.embedFile(file, {
-              maxDim: 1600,
-              inputSize: 1024,
-              scoreThreshold: 0.35,
-            });
+            const detected = await window.EvanoFace.embedFile(file);
             const faces = detected
               .filter((d) => Array.isArray(d.descriptor) && d.descriptor.length === 128)
               .map((d) => d.descriptor);
-
-            console.log("[reindex-all] " + (item.originalFilename || item.id) + " → " + faces.length + " وجه");
 
             await fetch("/api/admin/photos/" + encodeURIComponent(item.id) + "/faces", {
               method: "POST",
               credentials: "include",
               headers: csrfHeaders(),
-              body: JSON.stringify({ faces }),
+              body: JSON.stringify({ faces })
             });
 
             processed++;
             totalFaces += faces.length;
             if (faces.length === 0) skipped++;
           } catch (err) {
-            console.warn("[reindex-all] failed for", item.id, err);
             skipped++;
           }
         }
@@ -774,7 +755,7 @@
       const res = await fetch(API.reindex(id), {
         method: "POST",
         credentials: "include",
-        headers: csrfHeaders(),
+        headers: csrfHeaders()
       });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر بدء إعادة الفهرسة.");
@@ -791,7 +772,7 @@
       const res = await fetch(API.remove(id), {
         method: "DELETE",
         credentials: "include",
-        headers: csrfHeaders(),
+        headers: csrfHeaders()
       });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر الحذف.");
@@ -838,7 +819,7 @@
             const r = await fetch("/api/admin/jobs/" + encodeURIComponent(job.id) + "/retry", {
               method: "POST",
               credentials: "include",
-              headers: csrfHeaders(),
+              headers: csrfHeaders()
             });
             const d = await safeJson(r);
             if (!r.ok || !d.ok) throw new Error((d && d.message) || "تعذّرت الإعادة.");
@@ -917,13 +898,13 @@
       const payload = {
         similarityThreshold: Number(refs.setThreshold.value),
         selfieRetentionMinutes: Number(refs.setSelfieTtl.value),
-        searchRateLimit: Number(refs.setRateLimit.value),
+        searchRateLimit: Number(refs.setRateLimit.value)
       };
       const res = await fetch(API.settings, {
         method: "PATCH",
         credentials: "include",
         headers: csrfHeaders(),
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر الحفظ.");
@@ -933,7 +914,7 @@
       refs.settingsMsg.hidden = false;
     } finally {
       setBusy(refs.btnSaveSettings, false);
-    }
+       }
   }
 
   async function saveAlbumCode(e) {
@@ -957,7 +938,7 @@
         method: "POST",
         credentials: "include",
         headers: csrfHeaders(),
-        body: JSON.stringify({ newCode: a }),
+        body: JSON.stringify({ newCode: a })
       });
       const data = await safeJson(res);
       if (!res.ok || !data.ok) throw new Error((data && data.message) || "تعذّر التحديث.");
@@ -985,10 +966,10 @@
       refs.filePicker.value = "";
     });
 
-    ["dragenter","dragover"].forEach((ev) =>
+    ["dragenter", "dragover"].forEach((ev) =>
       refs.dropzone.addEventListener(ev, (e) => { e.preventDefault(); refs.dropzone.classList.add("is-over"); })
     );
-    ["dragleave","drop"].forEach((ev) =>
+    ["dragleave", "drop"].forEach((ev) =>
       refs.dropzone.addEventListener(ev, (e) => { e.preventDefault(); refs.dropzone.classList.remove("is-over"); })
     );
     refs.dropzone.addEventListener("drop", (e) => {
