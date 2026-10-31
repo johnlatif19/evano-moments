@@ -801,18 +801,11 @@ app.post("/api/admin/settings/album-code", requireAdmin, requireCsrf, handle(asy
   res.json({ ok: true });
 }));
 
-app.get("/login", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "login.html")));
-app.get("/dashboard", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "dashboard.html")));
-app.get("/gallery", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "gallery.html")));
-app.get("/search-face", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "search-face.html")));
-app.get("/privacy", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "privacy.html")));
-app.get("/", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
-
 app.use((req, res) => {
   if (req.path.startsWith("/api/")) {
     return res.status(404).json({ ok: false, message: "غير موجود." });
   }
-  res.status(404).sendFile(path.join(PUBLIC_DIR, "index.html"));
+  res.status(404).json({ ok: false, message: "غير موجود." });
 });
 
 app.use((err, req, res, next) => {
