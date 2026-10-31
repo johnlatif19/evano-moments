@@ -74,7 +74,7 @@ app.use(helmet({
       "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       "font-src": ["'self'", "https://fonts.gstatic.com"],
       "img-src": ["'self'", "data:", "blob:", "https://res.cloudinary.com"],
-      "connect-src": ["'self'", "https://api.cloudinary.com", "https://cdn.jsdelivr.net"],
+      "connect-src": ["'self'", "https://api.cloudinary.com", "https://cdn.jsdelivr.net", "https://res.cloudinary.com"],
       "frame-ancestors": ["'none'"],
       "base-uri": ["'self'"],
       "form-action": ["'self'"]
