@@ -35,7 +35,7 @@ function optional(name, fallback) {
 
 const ENV = {
   nodeEnv: optional("NODE_ENV", "development"),
-  appBaseUrl: optional("APP_BASE_URL", "http://localhost:3000"),
+  appBaseUrl: optional("APP_BASE_URL", "https://evano-moments.vercel.app"),
   adminUsername: required("ADMIN_USERNAME"),
   adminPasswordHash: required("ADMIN_PASSWORD_HASH"),
   sessionSecret: required("SESSION_SECRET"),
